@@ -20,7 +20,6 @@ from .types import SignalCondition, SignalProtocol, Time, VCDInput, VCDVCDProtoc
 class VCDSet:
     """
     Query VCD signals with functionally, and combine them with set theory operators.
-
     """
 
     def __init__(self, vcd: VCDInput, clock: str = "clk") -> None:
@@ -66,11 +65,26 @@ class VCDSet:
 
         # Find clock signal - EXACT match only
         if clock not in all_signals:
-            # Provide helpful error message with similar signals
-            similar = [s for s in all_signals if clock.lower() in s.lower()]
+            # Provide helpful error message with similar signals using fuzzy matching
+            # Split the search term into parts and find signals containing those parts
+            search_parts = [p for p in clock.lower().split('.') if p]
+            similar = []
+
+            # Score each signal based on how many parts match
+            scored_signals = []
+            for sig in all_signals:
+                sig_lower = sig.lower()
+                matches = sum(1 for part in search_parts if part in sig_lower)
+                if matches > 0:
+                    scored_signals.append((matches, sig))
+
+            # Sort by number of matches (descending) and take top matches
+            scored_signals.sort(reverse=True, key=lambda x: x[0])
+            similar = [sig for _, sig in scored_signals[:5]]
+
             error_msg = f"Clock signal '{clock}' not found in VCD."
             if similar:
-                error_msg += f" Did you mean one of: {similar[:5]}?"
+                error_msg += f" Did you mean one of: {similar}?"
             else:
                 error_msg += f" Available signals: {all_signals[:10]}..."
             raise ClockSignalError(error_msg)
@@ -105,11 +119,26 @@ class VCDSet:
             raise VCDParseError(f"Failed to retrieve signals: {e}") from e
 
         if signal_name not in all_signals:
-            # Provide helpful error with similar signals
-            similar = [s for s in all_signals if signal_name.lower() in s.lower()]
+            # Provide helpful error with similar signals using fuzzy matching
+            # Split the search term into parts and find signals containing those parts
+            search_parts = [p for p in signal_name.lower().split('.') if p]
+            similar = []
+
+            # Score each signal based on how many parts match
+            scored_signals = []
+            for sig in all_signals:
+                sig_lower = sig.lower()
+                matches = sum(1 for part in search_parts if part in sig_lower)
+                if matches > 0:
+                    scored_signals.append((matches, sig))
+
+            # Sort by number of matches (descending) and take top matches
+            scored_signals.sort(reverse=True, key=lambda x: x[0])
+            similar = [sig for _, sig in scored_signals[:5]]
+
             error_msg = f"Signal '{signal_name}' not found in VCD."
             if similar:
-                error_msg += f" Did you mean one of: {similar[:5]}?"
+                error_msg += f" Did you mean one of: {similar}?"
             else:
                 error_msg += f" Available signals: {all_signals[:10]}..."
             raise SignalNotFoundError(error_msg)
