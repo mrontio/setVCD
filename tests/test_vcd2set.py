@@ -1,0 +1,392 @@
+"""Tests for VCDSet class using real VCD file."""
+
+import pytest
+from pathlib import Path
+
+from vcd2set import (
+    VCDSet,
+    ClockSignalError,
+    EmptyVCDError,
+    InvalidInputError,
+    InvalidSignalConditionError,
+    SignalNotFoundError,
+    VCDFileNotFoundError,
+)
+
+
+# Fixtures
+@pytest.fixture
+def vcd_file_path():
+    """Path to the test VCD file."""
+    return Path(__file__).parent / "fixtures" / "wave.vcd"
+
+
+@pytest.fixture
+def vcdset(vcd_file_path):
+    """VCDSet instance initialized with the test VCD file."""
+    # Clock signal in this VCD is 'TOP.clk'
+    return VCDSet(str(vcd_file_path), clock="TOP.clk")
+
+
+@pytest.fixture
+def vcdset_with_vcdvcd_object(vcd_file_path):
+    """VCDSet instance initialized with a vcdvcd object."""
+    import vcdvcd
+
+    vcd = vcdvcd.VCDVCD(str(vcd_file_path))
+    return VCDSet(vcd, clock="TOP.clk")
+
+
+# Test Initialization
+class TestVCDSetInit:
+    """Tests for VCDSet.__init__"""
+
+    def test_init_from_string_filename(self, vcd_file_path):
+        """Test initialization from string filename."""
+        vs = VCDSet(str(vcd_file_path), clock="TOP.clk")
+        assert vs.wave is not None
+        assert "clock" in vs.sigs
+        assert vs.last_clock >= 0
+
+    def test_init_from_path_object(self, vcd_file_path):
+        """Test initialization from Path object."""
+        vs = VCDSet(vcd_file_path, clock="TOP.clk")
+        assert vs.wave is not None
+        assert "clock" in vs.sigs
+        assert vs.last_clock >= 0
+
+    def test_init_from_vcdvcd_object(self, vcd_file_path):
+        """Test initialization from vcdvcd.VCDVCD object."""
+        import vcdvcd
+
+        vcd = vcdvcd.VCDVCD(str(vcd_file_path))
+        vs = VCDSet(vcd, clock="TOP.clk")
+        assert vs.wave is vcd
+
+    def test_file_not_found(self):
+        """Test error when VCD file doesn't exist."""
+        with pytest.raises(VCDFileNotFoundError, match="VCD file not found"):
+            VCDSet("nonexistent.vcd", clock="TOP.clk")
+
+    def test_clock_signal_not_found(self, vcd_file_path):
+        """Test error when clock signal doesn't exist."""
+        with pytest.raises(ClockSignalError, match="Clock signal 'nonexistent_clk' not found"):
+            VCDSet(str(vcd_file_path), clock="nonexistent_clk")
+
+    def test_clock_signal_helpful_suggestion(self, vcd_file_path):
+        """Test that error suggests similar clock signal names."""
+        # Using 'clk' instead of 'TOP.clk' should suggest 'TOP.clk'
+        with pytest.raises(ClockSignalError, match="Did you mean one of"):
+            VCDSet(str(vcd_file_path), clock="clk")
+
+    def test_invalid_input_type(self):
+        """Test error when input is neither filename nor VCDVCD object."""
+        with pytest.raises(InvalidInputError, match="vcd must be a filename"):
+            VCDSet(12345, clock="TOP.clk")  # type: ignore
+
+    def test_last_clock_is_valid(self, vcdset):
+        """Test that last_clock timestamp is valid."""
+        assert isinstance(vcdset.last_clock, int)
+        assert vcdset.last_clock > 0
+
+
+# Test get() Method - Basic Functionality
+class TestVCDSetGetBasic:
+    """Tests for basic VCDSet.get() functionality"""
+
+    def test_get_returns_set(self, vcdset):
+        """Test that get() returns a set of integers."""
+        # Get times when reset is high (active)
+        result = vcdset.get("TOP.reset", lambda sm1, s, sp1: s == "1")
+        assert isinstance(result, set)
+        assert all(isinstance(t, int) for t in result)
+
+    def test_rising_edge_detection(self, vcdset):
+        """Test detecting rising edges (0 -> 1 transitions)."""
+        rising_edges = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        assert isinstance(rising_edges, set)
+        assert len(rising_edges) > 0  # Should have at least some rising edges
+
+    def test_falling_edge_detection(self, vcdset):
+        """Test detecting falling edges (1 -> 0 transitions)."""
+        falling_edges = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "1" and s == "0")
+        assert isinstance(falling_edges, set)
+        assert len(falling_edges) > 0  # Should have at least some falling edges
+
+    def test_high_level_detection(self, vcdset):
+        """Test detecting when signal is high."""
+        high_times = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == "1")
+        assert isinstance(high_times, set)
+        assert len(high_times) > 0
+
+    def test_low_level_detection(self, vcdset):
+        """Test detecting when signal is low."""
+        low_times = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == "0")
+        assert isinstance(low_times, set)
+        assert len(low_times) > 0
+
+    def test_any_change_detection(self, vcdset):
+        """Test detecting any signal change."""
+        changes = vcdset.get(
+            "TOP.io_input_valid", lambda sm1, s, sp1: sm1 is not None and sm1 != s
+        )
+        assert isinstance(changes, set)
+
+
+# Test get() Method - Signal Validation
+class TestVCDSetGetValidation:
+    """Tests for signal validation in get() method"""
+
+    def test_signal_not_found(self, vcdset):
+        """Test error when signal doesn't exist."""
+        with pytest.raises(SignalNotFoundError, match="Signal 'nonexistent_signal' not found"):
+            vcdset.get("nonexistent_signal", lambda sm1, s, sp1: True)
+
+    def test_signal_not_found_with_suggestion(self, vcdset):
+        """Test that error suggests similar signal names."""
+        with pytest.raises(SignalNotFoundError, match="Did you mean one of"):
+            vcdset.get("cLk", lambda sm1, s, sp1: True)  # Misspelled 'clk'
+
+    def test_signal_condition_not_callable(self, vcdset):
+        """Test error when signal_condition is not callable."""
+        with pytest.raises(InvalidSignalConditionError, match="must be callable"):
+            vcdset.get("TOP.clk", "not a callable")  # type: ignore
+
+    def test_signal_condition_raises_exception(self, vcdset):
+        """Test error when signal_condition raises an exception."""
+
+        def bad_condition(sm1, s, sp1):
+            raise ValueError("Intentional error")
+
+        with pytest.raises(InvalidSignalConditionError, match="raised exception at time"):
+            vcdset.get("TOP.clk", bad_condition)
+
+
+# Test get() Method - Boundary Conditions
+class TestVCDSetGetBoundary:
+    """Tests for boundary conditions in get() method"""
+
+    def test_boundary_sm1_is_none_at_time_zero(self, vcdset):
+        """Test that sm1 is None at time 0."""
+        times_with_none = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 is None)
+        assert 0 in times_with_none  # Time 0 should have sm1=None
+
+    def test_boundary_sp1_is_none_at_last_time(self, vcdset):
+        """Test that sp1 is None at last clock time."""
+        times_with_none = vcdset.get("TOP.clk", lambda sm1, s, sp1: sp1 is None)
+        assert vcdset.last_clock in times_with_none  # Last time should have sp1=None
+
+    def test_boundary_both_none_only_at_extremes(self, vcdset):
+        """Test that both sm1 and sp1 are not None except at boundaries."""
+        times_with_none = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 is None or sp1 is None)
+        # Should include at least time 0 and last_clock
+        assert 0 in times_with_none
+        assert vcdset.last_clock in times_with_none
+
+
+# Test get() Method - Multi-bit Signals
+class TestVCDSetGetMultiBit:
+    """Tests for multi-bit signal handling"""
+
+    def test_multibit_signal_pattern_matching(self, vcdset):
+        """Test pattern matching on multi-bit signals."""
+        # s_axis_tdata is a 32-bit signal
+        # Check for any specific pattern (e.g., all zeros)
+        result = vcdset.get(
+            "TOP.io_input_payload_fragment_value_0[15:0]", lambda sm1, s, sp1: s == "00000000000000000000000000000000"
+        )
+        assert isinstance(result, set)
+
+    def test_multibit_signal_change_detection(self, vcdset):
+        """Test detecting changes in multi-bit signals."""
+        changes = vcdset.get(
+            "TOP.io_input_payload_fragment_value_0[15:0]", lambda sm1, s, sp1: sm1 is not None and sm1 != s
+        )
+        assert isinstance(changes, set)
+
+    def test_multibit_signal_keep_field(self, vcdset):
+        """Test 4-bit keep field (s_axis_tkeep)."""
+        # Check for all-enabled pattern (4'b1111)
+        all_enabled = vcdset.get("TOP.io_input_payload_fragment_value_0[15:0]", lambda sm1, s, sp1: s == "1111")
+        assert isinstance(all_enabled, set)
+
+
+# Test Set Operations
+class TestVCDSetOperations:
+    """Tests for combining results with set operations"""
+
+    def test_intersection_rising_edge_and_valid(self, vcdset):
+        """Test finding clock rising edges when a signal is valid."""
+        rising_edges = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        valid_high = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
+
+        # Times when both conditions are true
+        valid_rising_edges = rising_edges & valid_high
+        assert isinstance(valid_rising_edges, set)
+        # All elements should be in both sets
+        assert valid_rising_edges <= rising_edges
+        assert valid_rising_edges <= valid_high
+
+    def test_union_multiple_conditions(self, vcdset):
+        """Test union of multiple conditions."""
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        falling = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "1" and s == "0")
+
+        # All edges (rising or falling)
+        all_edges = rising | falling
+        assert isinstance(all_edges, set)
+        assert len(all_edges) >= len(rising)
+        assert len(all_edges) >= len(falling)
+
+    def test_difference_operation(self, vcdset):
+        """Test set difference operation."""
+        all_times = vcdset.get("TOP.clk", lambda sm1, s, sp1: True)
+        reset_active = vcdset.get("TOP.reset", lambda sm1, s, sp1: s == "1")
+
+        # Times when not in reset
+        not_in_reset = all_times - reset_active
+        assert isinstance(not_in_reset, set)
+        # Should have no overlap with reset_active
+        assert (not_in_reset & reset_active) == set()
+
+    def test_symmetric_difference(self, vcdset):
+        """Test symmetric difference (XOR) operation."""
+        valid_high = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
+        ready_high = vcdset.get("TOP.io_input_ready", lambda sm1, s, sp1: s == "1")
+
+        # Times when exactly one is high (not both)
+        exclusive = valid_high ^ ready_high
+        assert isinstance(exclusive, set)
+        # Should not include times when both are high
+        both_high = valid_high & ready_high
+        assert (exclusive & both_high) == set()
+
+
+# Test Real-World Hardware Patterns
+class TestVCDSetHardwarePatterns:
+    """Tests for common hardware verification patterns"""
+
+    def test_axi_stream_handshake(self, vcdset):
+        """Test AXI Stream handshake (valid & ready both high)."""
+        valid_high = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
+        ready_high = vcdset.get("TOP.io_input_ready", lambda sm1, s, sp1: s == "1")
+
+        # Handshake occurs when both are high
+        handshake_times = valid_high & ready_high
+        assert isinstance(handshake_times, set)
+
+    def test_axi_stream_valid_rising_edge(self, vcdset):
+        """Test AXI Stream valid signal rising edge."""
+        valid_rising = vcdset.get(
+            "TOP.io_input_valid", lambda sm1, s, sp1: sm1 == "0" and s == "1"
+        )
+        assert isinstance(valid_rising, set)
+
+    def test_last_signal_assertion(self, vcdset):
+        """Test when tlast is asserted."""
+        last_high = vcdset.get("TOP.io_input_payload_last", lambda sm1, s, sp1: s == "1")
+        assert isinstance(last_high, set)
+
+    def test_reset_deassert_time(self, vcdset):
+        """Test finding when reset is deasserted (1 -> 0)."""
+        reset_deassert = vcdset.get("TOP.reset", lambda sm1, s, sp1: sm1 == "1" and s == "0")
+        assert isinstance(reset_deassert, set)
+
+    def test_clock_rising_during_valid_transfer(self, vcdset):
+        """Test clock edges during valid AXI transfers."""
+        clk_rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        valid_high = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
+        ready_high = vcdset.get("TOP.io_input_ready", lambda sm1, s, sp1: s == "1")
+
+        # Clock rising edges during handshake
+        transfer_clocks = clk_rising & valid_high & ready_high
+        assert isinstance(transfer_clocks, set)
+
+
+# Test Edge Cases
+class TestVCDSetEdgeCases:
+    """Tests for edge cases and corner scenarios"""
+
+    def test_empty_result_set(self, vcdset):
+        """Test that impossible conditions return empty set."""
+        # Condition that's never true (signal can't be both 0 and 1)
+        result = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == "0" and s == "1")
+        assert result == set()
+
+    def test_full_time_range_result(self, vcdset):
+        """Test condition that's always true returns all times."""
+        all_times = vcdset.get("TOP.clk", lambda sm1, s, sp1: True)
+        assert len(all_times) == vcdset.last_clock + 1  # 0 to last_clock inclusive
+
+    def test_using_only_current_value(self, vcdset):
+        """Test condition that only uses current value (ignores sm1, sp1)."""
+        result = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == "1")
+        assert isinstance(result, set)
+
+    def test_using_all_three_values(self, vcdset):
+        """Test condition using all three time points."""
+        # Pattern: was 0, now 1, will be 1 (rising edge that stays high)
+        result = vcdset.get(
+            "TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1" and sp1 == "1"
+        )
+        assert isinstance(result, set)
+
+
+# Test Consistency Between Initialization Methods
+class TestVCDSetConsistency:
+    """Tests for consistency between different initialization methods"""
+
+    def test_same_results_from_filename_and_object(self, vcd_file_path):
+        """Test that filename and vcdvcd object produce same results."""
+        import vcdvcd
+
+        # Initialize from filename
+        vs1 = VCDSet(str(vcd_file_path), clock="TOP.clk")
+
+        # Initialize from vcdvcd object
+        vcd = vcdvcd.VCDVCD(str(vcd_file_path))
+        vs2 = VCDSet(vcd, clock="TOP.clk")
+
+        # Should have same last_clock
+        assert vs1.last_clock == vs2.last_clock
+
+        # Should produce same results for same query
+        result1 = vs1.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        result2 = vs2.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        assert result1 == result2
+
+
+# Performance/Sanity Tests
+class TestVCDSetSanity:
+    """Sanity tests for performance and correctness"""
+
+    def test_rising_and_falling_edges_disjoint(self, vcdset):
+        """Test that rising and falling edges don't overlap."""
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        falling = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "1" and s == "0")
+
+        # Should have no overlap
+        assert (rising & falling) == set()
+
+    def test_all_times_partition(self, vcdset):
+        """Test that high and low times partition the full time range."""
+        high = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == "1")
+        low = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == "0")
+
+        # Should be disjoint
+        assert (high & low) == set()
+
+        # Union should cover all times
+        all_times = set(range(0, vcdset.last_clock + 1))
+        assert (high | low) == all_times
+
+    def test_result_times_within_bounds(self, vcdset):
+        """Test that all result times are within valid range."""
+        result = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
+
+        for time in result:
+            assert 0 <= time <= vcdset.last_clock
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

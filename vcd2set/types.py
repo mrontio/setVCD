@@ -40,7 +40,7 @@ class VCDVCDProtocol(Protocol):
     an explicit dependency on vcdvcd for type checking.
     """
 
-    def keys(self) -> List[str]:
+    def get_signals(self) -> List[str]:
         """Returns list of all signal names in the VCD file."""
         ...
 

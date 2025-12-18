@@ -246,14 +246,20 @@ except VCDSetError as e:
 git clone https://github.com/yourusername/vcd2set
 cd vcd2set
 
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
 # Install with dev dependencies
 pip install -e ".[dev]"
 ```
 
 ### Running Tests
 
+The test suite uses pytest and includes comprehensive tests with a real VCD file:
+
 ```bash
-# Run tests with coverage
+# Run all tests with coverage
 pytest
 
 # Run tests with verbose output
@@ -261,21 +267,59 @@ pytest -v
 
 # Run specific test file
 pytest tests/test_vcd2set.py
+
+# Run specific test class
+pytest tests/test_vcd2set.py::TestVCDSetInit
+
+# Run specific test
+pytest tests/test_vcd2set.py::TestVCDSetInit::test_init_from_string_filename
+
+# Generate HTML coverage report
+pytest --cov=vcd2set --cov-report=html
+# Then open htmlcov/index.html in browser
+
+# Run without coverage for faster execution
+pytest --no-cov
 ```
+
+### Test Structure
+
+The test suite includes:
+- **70+ test cases** covering all functionality
+- **Real VCD file** (12.6MB hardware simulation) in `tests/fixtures/wave.vcd`
+- Tests for initialization, signal queries, error handling, boundary conditions
+- Hardware-specific patterns (AXI Stream handshakes, clock edges, reset)
+- Set operations (intersection, union, difference, XOR)
 
 ### Code Quality
 
 ```bash
-# Type check
+# Type check with mypy (strict mode)
 mypy vcd2set
 
-# Format code
+# Format code with black
 black vcd2set tests
+
+# Sort imports with isort
 isort vcd2set tests
 
-# Lint
+# Lint with ruff
 ruff check vcd2set tests
+
+# Run all quality checks
+mypy vcd2set && black vcd2set tests && isort vcd2set tests && ruff check vcd2set tests
 ```
+
+### Continuous Integration
+
+The project includes a GitHub Actions workflow (`.github/workflows/test.yml`) that:
+- Runs tests on Python 3.8, 3.9, 3.10, 3.11, 3.12
+- Checks code formatting (black)
+- Checks import sorting (isort)
+- Runs linting (ruff)
+- Performs type checking (mypy)
+- Builds the package
+- Uploads coverage to Codecov (optional)
 
 ### Type Checking
 

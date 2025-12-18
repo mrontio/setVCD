@@ -43,7 +43,7 @@ class VCDSet:
                 self.wave: VCDVCDProtocol = vcdvcd.VCDVCD(str(vcd_path))
             except Exception as e:
                 raise VCDParseError(f"Failed to parse VCD file: {e}") from e
-        elif hasattr(vcd, "keys") and hasattr(vcd, "__getitem__"):
+        elif hasattr(vcd, "get_signals") and hasattr(vcd, "__getitem__"):
             # Duck typing check for VCDVCD-like object
             self.wave = vcd
         else:
@@ -54,7 +54,7 @@ class VCDSet:
 
         # Validate VCD has signals
         try:
-            all_signals = list(self.wave.keys())
+            all_signals = self.wave.get_signals()
         except Exception as e:
             raise VCDParseError(f"Failed to retrieve signals from VCD: {e}") from e
 
@@ -100,7 +100,7 @@ class VCDSet:
         """
         # Validate signal exists
         try:
-            all_signals = list(self.wave.keys())
+            all_signals = self.wave.get_signals()
         except Exception as e:
             raise VCDParseError(f"Failed to retrieve signals: {e}") from e
 
