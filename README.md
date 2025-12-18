@@ -12,32 +12,31 @@ VCD2Set is a Python package for analyzing Verilog VCD files and extracting time 
 pip install vcd2set
 ```
 
-Or for development:
-
-```bash
-pip install -e .
-```
-
-## Quick Start
-
+## Example
+This uses the example VCD file that we use for testing.
 ```python
 from vcd2set import VCDSet
 
 # Load VCD file
-vs = VCDSet("simulation.vcd", clock="top.clk")
+vcd_path = "./tests/fixtures/wave.vcd"
+vs = VCDSet(vcd_path, clock="TOP.clk")
 
-# Get rising edges of a signal
-rising_edges = vs.get("data", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+# Example: Examine values that our accelerator outputs
+## Find VCD signals relating to output
+vs.search("output")
 
-# Get falling edges
-falling_edges = vs.get("data", lambda sm1, s, sp1: sm1 == "1" and s == "0")
+## Get rising edges, reset = 0, output valid & ready
+rising_edges = vs.get("TOP.clk", lambda tm1, t, tp1: tm1 == "0" and t == "1")
+reset0 = vs.get("TOP.reset", lambda tm1, t, tp1: t == "0")
+out_valid = vs.get("TOP.Accelerator.io_output_valid", lambda tm1, t, tp1: t == "1")
+out_ready = vs.get("TOP.Accelerator.io_output_ready", lambda tm1, t, tp1: t == "1")
 
-# Get time points where signal is high
-high_times = vs.get("enable", lambda sm1, s, sp1: s == "1")
+## Get their intersection
+valid_output_timesteps = rising_edges & reset0 & out_ready & out_valid
 
-# Combine sets for complex conditions
-# For example: rising edges when enable is high
-valid_edges = rising_edges & high_times
+## Extract the values at the timesteps when everything else is valid
+outputs = vs.get_values("TOP.Accelerator.io_output_payload_fragment_value_0[0:0]", valid_output_timesteps)
+print(outputs)
 ```
 
 ## Features

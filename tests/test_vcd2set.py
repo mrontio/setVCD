@@ -390,3 +390,78 @@ class TestVCDSetSanity:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# Test get_values() Method
+class TestVCDSetGetValues:
+    """Tests for VCDSet.get_values() method"""
+
+    def test_get_values_returns_list_of_tuples(self, vcdset):
+        """Test that get_values() returns a list of (time, value) tuples."""
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        values = vcdset.get_values("TOP.io_input_valid", rising)
+        
+        assert isinstance(values, list)
+        assert all(isinstance(item, tuple) for item in values)
+        assert all(len(item) == 2 for item in values)
+        assert all(isinstance(item[0], int) and isinstance(item[1], str) for item in values)
+
+    def test_get_values_sorted_by_time(self, vcdset):
+        """Test that results are sorted by time."""
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        values = vcdset.get_values("TOP.io_input_valid", rising)
+        
+        times = [t for t, v in values]
+        assert times == sorted(times)
+
+    def test_get_values_with_empty_set(self, vcdset):
+        """Test get_values with empty timestep set."""
+        values = vcdset.get_values("TOP.clk", set())
+        assert values == []
+
+    def test_get_values_single_timestep(self, vcdset):
+        """Test get_values with single timestep."""
+        values = vcdset.get_values("TOP.clk", {0})
+        assert len(values) == 1
+        assert values[0][0] == 0
+        assert isinstance(values[0][1], str)
+
+    def test_get_values_multibit_signal(self, vcdset):
+        """Test get_values with multi-bit signal."""
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        timesteps = set(list(rising)[:5])  # First 5 rising edges
+        
+        values = vcdset.get_values("TOP.io_input_payload_fragment_value_0[15:0]", timesteps)
+        assert len(values) == 5
+        # Multi-bit values should be binary strings
+        assert all(len(v) == 16 for _, v in values)
+        assert all(all(c in '01xz' for c in v) for _, v in values)
+
+    def test_get_values_signal_not_found(self, vcdset):
+        """Test error when signal doesn't exist."""
+        with pytest.raises(SignalNotFoundError):
+            vcdset.get_values("nonexistent_signal", {0, 1, 2})
+
+    def test_get_values_practical_example(self, vcdset):
+        """Test practical use case: get data values during handshakes."""
+        # Find handshake times
+        valid = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
+        ready = vcdset.get("TOP.io_input_ready", lambda sm1, s, sp1: s == "1")
+        handshakes = valid & ready
+        
+        # Get data values at handshake times
+        data_values = vcdset.get_values("TOP.io_input_payload_fragment_value_0[15:0]", handshakes)
+        
+        assert len(data_values) == len(handshakes)
+        assert all(isinstance(time, int) for time, _ in data_values)
+        assert all(isinstance(value, str) for _, value in data_values)
+
+    def test_get_values_preserves_timestep_set(self, vcdset):
+        """Test that original timestep set is unchanged."""
+        timesteps = {10, 20, 30, 40, 50}
+        original_timesteps = timesteps.copy()
+        
+        values = vcdset.get_values("TOP.clk", timesteps)
+        
+        assert timesteps == original_timesteps  # Set unchanged
+        assert len(values) == len(timesteps)

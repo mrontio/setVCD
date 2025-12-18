@@ -1,7 +1,8 @@
 """VCD2Set - Convert VCD signals to sets of time points based on conditions."""
 
 from pathlib import Path
-from typing import Dict, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
+import re
 
 import vcdvcd
 
@@ -106,6 +107,11 @@ class VCDSet:
                 f"Failed to get last timestamp from clock signal: {e}"
             ) from e
 
+    def search(self, search_regex=""):
+        signals = self.wave.get_signals()
+        searched = [s for s in signals if re.search(search_regex, s)]
+        return searched
+
     def get(
         self, signal_name: str, signal_condition: SignalCondition
     ) -> Set[Time]:
@@ -192,3 +198,75 @@ class VCDSet:
                 ) from e
 
         return out
+
+    def get_values(
+        self, signal_name: str, timesteps: Set[Time]
+    ) -> List[Tuple[Time, str]]:
+        """Get signal values at specific timesteps.
+
+        This method takes a set of timesteps (typically from get()) and returns
+        the signal values at those times as a sorted list of (time, value) tuples.
+
+        Args:
+            signal_name: Exact name of the signal to query (case-sensitive).
+                Must exist in the VCD file.
+            timesteps: Set of integer timesteps to query. Can be empty.
+
+        Returns:
+            List of (time, value) tuples sorted by time. Values are strings
+            like '0', '1', 'x', 'z', or multi-bit like '0101'.
+
+        """
+        # Validate signal exists
+        try:
+            all_signals = self.wave.get_signals()
+        except Exception as e:
+            raise VCDParseError(f"Failed to retrieve signals: {e}") from e
+
+        if signal_name not in all_signals:
+            # Provide helpful error with similar signals using fuzzy matching
+            search_parts = [p for p in signal_name.lower().split(".") if p]
+            similar = []
+
+            # Score each signal based on how many parts match
+            scored_signals = []
+            for sig in all_signals:
+                sig_lower = sig.lower()
+                matches = sum(1 for part in search_parts if part in sig_lower)
+                if matches > 0:
+                    scored_signals.append((matches, sig))
+
+            # Sort by number of matches (descending) and take top matches
+            scored_signals.sort(reverse=True, key=lambda x: x[0])
+            similar = [sig for _, sig in scored_signals[:5]]
+
+            error_msg = f"Signal '{signal_name}' not found in VCD."
+            if similar:
+                error_msg += f" Did you mean one of: {similar}?"
+            else:
+                error_msg += f" Available signals: {all_signals[:10]}..."
+            raise SignalNotFoundError(error_msg)
+
+        # Get signal object
+        try:
+            signal_obj = self.wave[signal_name]
+        except Exception as e:
+            raise VCDParseError(
+                f"Failed to access signal '{signal_name}': {e}"
+            ) from e
+
+        # Get values at each timestep and sort by time
+        result: List[Tuple[Time, str]] = []
+        for time in timesteps:
+            try:
+                value = signal_obj[time]
+                result.append((time, value))
+            except Exception as e:
+                raise VCDParseError(
+                    f"Failed to access signal '{signal_name}' at time {time}: {e}"
+                ) from e
+
+        # Sort by time
+        result.sort(key=lambda x: x[0])
+
+        return result
