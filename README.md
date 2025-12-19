@@ -14,7 +14,15 @@ You can filter through an individual signal with a filter function of this signa
 
 $(\text{Bits}, \text{Bits}, \text{Bits}) \rightarrow \text{Bool}$
 
-with the left-hand tuple representing *values* at timestep $t$: $(t-1, t, t+1)$.
+with the left-hand tuple representing *values* at timestep $t$: $(t-1, t, t+1)$. 
+
+We then define our `get` method, which takes the name of the signal (as a String), a function with the above signature, and returns a set of *timesteps*:
+
+$\texttt{get}: (\text{String}, ((\text{Bits}, \text{Bits}, \text{Bits}) \rightarrow \text{Bool})) \rightarrow \text{Set(Timestep)}$
+
+As what is returned is a set, you can then use [set operations](https://en.wikipedia.org/wiki/Set_(mathematics)#Basic_operations) to manipulate them as needed, and finally extract the values from your desired signal using our `get_value` function:
+
+$\texttt{get-value}: (\text{String}, \text{Set(Timestep)}) \rightarrow \text{List(Bits)}$
 
 Here's an example of finding the rising edges of the clock signal `TOP.clk` of our test wavefile `wave.vcd`:
 ```python
