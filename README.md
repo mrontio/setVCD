@@ -1,19 +1,19 @@
 # SetVCD
+Programmatically inspect hardware VCD signals using a high-level functional interface.
 
-Convert VCD (Value Change Dump) signals to sets of time points based on custom conditions.
+Higher-order programming constructs and set operations are a natural fit for inspecting VCD signals, and this Python library allows you to easily specify, in text, what simulation timesteps matter to functional correctness.
 
-## Overview
+## Motivating Example
+Say you are debugging a streaming interface, you often only care about the values of the data at timesteps at meeting the following condition:
+$\text{Rising edge} \land \text{Reset is 0} \land \text{ready} \land \text{valid}$
 
-SetVCD is a Python package for analyzing Verilog VCD files and extracting time points where specific signal conditions are met. It provides a simple, type-safe interface for working with simulation waveforms using set-based operations.
+![img/gtkwave.png](img/gtkwave.png "GTKWave screenshot of streaming interface we want to debug.")
 
-## Installation
+You can filter through an individual signal with a filter function of this signature:
+$(\text{Bits}, \text{Bits}, \text{Bits}) \rightarrow \mathbb{B}$
+with the left-hand tuple representing *values* at timestep $t$: $(t-1, t, t+1)$.
 
-```bash
-pip install setVCD
-```
-
-## Example
-This uses the example VCD file that we use for testing.
+Here's an example of finding the rising edges of the clock signal `TOP.clk` of our test wavefile `wave.vcd`:
 ```python
 from setVCD import SetVCD
 
@@ -21,23 +21,51 @@ from setVCD import SetVCD
 vcd_path = "./tests/fixtures/wave.vcd"
 sv = SetVCD(vcd_path, clock="TOP.clk")
 
-# Example: Examine values that our accelerator outputs
-## Find VCD signals relating to output
+rising_edges = sv.get("TOP.clk", lambda tm1, t, tp1: tm1 == "0" and t == "1")
+print(rising_edges)
+# {34, 36, 38, 40, 42, 44, ...}
+```
+
+Because `rising_edges` is returned as a set, we can use set operations to combine it with other signals:
+```python
+# Get times when the reset signal is 0
+reset_is_0 = sv.get("TOP.reset", lambda tm1, t, tp1: t == "0")
+# Use set intersection to get valid clock updates.
+clock_update = rising_edges & reset_is_0
+```
+
+Finally, you can search the wavefile with a regex (e.g. "output"), and apply the same operations to it:
+```python
+# Find VCD signals relating to keyword "output"
 sv.search("output")
 
-## Get rising edges, reset = 0, output valid & ready
-rising_edges = sv.get("TOP.clk", lambda tm1, t, tp1: tm1 == "0" and t == "1")
-reset0 = sv.get("TOP.reset", lambda tm1, t, tp1: t == "0")
+# Get times when output_valid and output_ready are asserted.
 out_valid = sv.get("TOP.Accelerator.io_output_valid", lambda tm1, t, tp1: t == "1")
 out_ready = sv.get("TOP.Accelerator.io_output_ready", lambda tm1, t, tp1: t == "1")
 
-## Get their intersection
+# Get timesteps of valid outputs
 valid_output_timesteps = rising_edges & reset0 & out_ready & out_valid
 
-## Extract the values at the timesteps when everything else is valid
+# Get the values of the Stream `value` signal (the data) at timesteps when it is valid
 outputs = sv.get_values("TOP.Accelerator.io_output_payload_fragment_value_0[0:0]", valid_output_timesteps)
 print(outputs)
+# [(52, '0'), (62, '0'), (72, '1'), ...]
 ```
+
+## Overview
+
+SetVCD is a Python package for analyzing Verilog VCD files and extracting time points where specific signal conditions are met. It provides a simple, type-safe interface for working with simulation waveforms using set-based operations.
+
+## Installation
+Whilst we are in pre-release, please install the package in a local venv:
+```bash
+python -m venv ./vcd-venv
+source vcd-venv/bin/activate
+git clone https://github.com/mrontio/setVCD.git
+cd setVCD
+pip install .
+```
+
 
 ## Usage
 ### Initialization
