@@ -4,13 +4,16 @@ Programmatically inspect hardware VCD signals using a high-level functional inte
 Higher-order programming constructs and set operations are a natural fit for inspecting VCD signals, and this Python library allows you to easily specify, in text, what simulation timesteps matter to functional correctness.
 
 ## Motivating Example
-Say you are debugging a streaming interface, you often only care about the values of the data at timesteps at meeting the following condition:
+Say you are debugging a streaming interface, you often only care about the values of the data at timesteps meeting the following condition:
+
 $\text{Rising edge} \land \text{Reset is 0} \land \text{ready} \land \text{valid}$
 
 ![img/gtkwave.png](img/gtkwave.png "GTKWave screenshot of streaming interface we want to debug.")
 
 You can filter through an individual signal with a filter function of this signature:
-$(\text{Bits}, \text{Bits}, \text{Bits}) \rightarrow \mathbb{B}$
+
+$(\text{Bits}, \text{Bits}, \text{Bits}) \rightarrow \text{Bool}$
+
 with the left-hand tuple representing *values* at timestep $t$: $(t-1, t, t+1)$.
 
 Here's an example of finding the rising edges of the clock signal `TOP.clk` of our test wavefile `wave.vcd`:
