@@ -1,8 +1,8 @@
 """SetVCD - Convert VCD signals to sets of time points based on conditions."""
 
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
-import re
 
 import vcdvcd
 
@@ -68,7 +68,7 @@ class SetVCD:
         if clock not in all_signals:
             # Provide helpful error message with similar signals using fuzzy matching
             # Split the search term into parts and find signals containing those parts
-            search_parts = [p for p in clock.lower().split('.') if p]
+            search_parts = [p for p in clock.lower().split(".") if p]
             similar = []
 
             # Score each signal based on how many parts match
@@ -107,14 +107,26 @@ class SetVCD:
                 f"Failed to get last timestamp from clock signal: {e}"
             ) from e
 
-    def search(self, search_regex=""):
+    def search(self, search_regex: str = "") -> List[str]:
+        """Search for signals matching a regex pattern.
+
+        Args:
+            search_regex: Regular expression pattern to match signal names.
+                Empty string returns all signals.
+
+        Returns:
+            List of signal names matching the pattern.
+
+        Example:
+            >>> vs = SetVCD("sim.vcd", clock="TOP.clk")
+            >>> output_signals = vs.search("output")
+            >>> accelerator_signals = vs.search("Accelerator.*valid")
+        """
         signals = self.wave.get_signals()
         searched = [s for s in signals if re.search(search_regex, s)]
         return searched
 
-    def get(
-        self, signal_name: str, signal_condition: SignalCondition
-    ) -> Set[Time]:
+    def get(self, signal_name: str, signal_condition: SignalCondition) -> Set[Time]:
         """
         Filter time points
         """
@@ -127,7 +139,7 @@ class SetVCD:
         if signal_name not in all_signals:
             # Provide helpful error with similar signals using fuzzy matching
             # Split the search term into parts and find signals containing those parts
-            search_parts = [p for p in signal_name.lower().split('.') if p]
+            search_parts = [p for p in signal_name.lower().split(".") if p]
             similar = []
 
             # Score each signal based on how many parts match
@@ -159,9 +171,7 @@ class SetVCD:
         try:
             signal_obj = self.wave[signal_name]
         except Exception as e:
-            raise VCDParseError(
-                f"Failed to access signal '{signal_name}': {e}"
-            ) from e
+            raise VCDParseError(f"Failed to access signal '{signal_name}': {e}") from e
 
         # Iterate through ALL time steps (not just deltas)
         out: Set[Time] = set()
@@ -251,9 +261,7 @@ class SetVCD:
         try:
             signal_obj = self.wave[signal_name]
         except Exception as e:
-            raise VCDParseError(
-                f"Failed to access signal '{signal_name}': {e}"
-            ) from e
+            raise VCDParseError(f"Failed to access signal '{signal_name}': {e}") from e
 
         # Get values at each timestep and sort by time
         result: List[Tuple[Time, str]] = []

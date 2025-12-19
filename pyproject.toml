@@ -73,7 +73,7 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.9"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
@@ -85,9 +85,13 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 
+[[tool.mypy.overrides]]
+module = "vcdvcd"
+ignore_missing_imports = true
+
 [tool.black]
 line-length = 88
-target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+target-version = ['py39', 'py310', 'py311', 'py312']
 include = '\.pyi?$'
 
 [tool.isort]
@@ -97,6 +101,8 @@ line_length = 88
 [tool.ruff]
 line-length = 88
 target-version = "py38"
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -110,5 +116,5 @@ ignore = [
     "E501",  # line too long (handled by black)
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]  # Allow unused imports in __init__.py

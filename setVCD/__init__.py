@@ -11,8 +11,8 @@ from .exceptions import (
     VCDParseError,
     VCDSetError,
 )
-from .types import SignalCondition, Time, TimeValue, VCDInput, Value
 from .setVCD import SetVCD
+from .types import SignalCondition, Time, TimeValue, Value, VCDInput
 
 __version__ = "0.1.0"
 __all__ = [

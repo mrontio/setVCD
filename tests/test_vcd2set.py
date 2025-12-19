@@ -1,14 +1,14 @@
-"""Tests for VCDSet class using real VCD file."""
+"""Tests for SetVCD class using real VCD file."""
 
-import pytest
 from pathlib import Path
 
-from vcd2set import (
-    VCDSet,
+import pytest
+
+from setVCD import (
     ClockSignalError,
-    EmptyVCDError,
     InvalidInputError,
     InvalidSignalConditionError,
+    SetVCD,
     SignalNotFoundError,
     VCDFileNotFoundError,
 )
@@ -23,34 +23,34 @@ def vcd_file_path():
 
 @pytest.fixture
 def vcdset(vcd_file_path):
-    """VCDSet instance initialized with the test VCD file."""
+    """SetVCD instance initialized with the test VCD file."""
     # Clock signal in this VCD is 'TOP.clk'
-    return VCDSet(str(vcd_file_path), clock="TOP.clk")
+    return SetVCD(str(vcd_file_path), clock="TOP.clk")
 
 
 @pytest.fixture
 def vcdset_with_vcdvcd_object(vcd_file_path):
-    """VCDSet instance initialized with a vcdvcd object."""
+    """SetVCD instance initialized with a vcdvcd object."""
     import vcdvcd
 
     vcd = vcdvcd.VCDVCD(str(vcd_file_path))
-    return VCDSet(vcd, clock="TOP.clk")
+    return SetVCD(vcd, clock="TOP.clk")
 
 
 # Test Initialization
-class TestVCDSetInit:
-    """Tests for VCDSet.__init__"""
+class TestSetVCDInit:
+    """Tests for SetVCD.__init__"""
 
     def test_init_from_string_filename(self, vcd_file_path):
         """Test initialization from string filename."""
-        vs = VCDSet(str(vcd_file_path), clock="TOP.clk")
+        vs = SetVCD(str(vcd_file_path), clock="TOP.clk")
         assert vs.wave is not None
         assert "clock" in vs.sigs
         assert vs.last_clock >= 0
 
     def test_init_from_path_object(self, vcd_file_path):
         """Test initialization from Path object."""
-        vs = VCDSet(vcd_file_path, clock="TOP.clk")
+        vs = SetVCD(vcd_file_path, clock="TOP.clk")
         assert vs.wave is not None
         assert "clock" in vs.sigs
         assert vs.last_clock >= 0
@@ -60,29 +60,31 @@ class TestVCDSetInit:
         import vcdvcd
 
         vcd = vcdvcd.VCDVCD(str(vcd_file_path))
-        vs = VCDSet(vcd, clock="TOP.clk")
+        vs = SetVCD(vcd, clock="TOP.clk")
         assert vs.wave is vcd
 
     def test_file_not_found(self):
         """Test error when VCD file doesn't exist."""
         with pytest.raises(VCDFileNotFoundError, match="VCD file not found"):
-            VCDSet("nonexistent.vcd", clock="TOP.clk")
+            SetVCD("nonexistent.vcd", clock="TOP.clk")
 
     def test_clock_signal_not_found(self, vcd_file_path):
         """Test error when clock signal doesn't exist."""
-        with pytest.raises(ClockSignalError, match="Clock signal 'nonexistent_clk' not found"):
-            VCDSet(str(vcd_file_path), clock="nonexistent_clk")
+        with pytest.raises(
+            ClockSignalError, match="Clock signal 'nonexistent_clk' not found"
+        ):
+            SetVCD(str(vcd_file_path), clock="nonexistent_clk")
 
     def test_clock_signal_helpful_suggestion(self, vcd_file_path):
         """Test that error suggests similar clock signal names."""
         # Using 'clk' instead of 'TOP.clk' should suggest 'TOP.clk'
         with pytest.raises(ClockSignalError, match="Did you mean one of"):
-            VCDSet(str(vcd_file_path), clock="clk")
+            SetVCD(str(vcd_file_path), clock="clk")
 
     def test_invalid_input_type(self):
         """Test error when input is neither filename nor VCDVCD object."""
         with pytest.raises(InvalidInputError, match="vcd must be a filename"):
-            VCDSet(12345, clock="TOP.clk")  # type: ignore
+            SetVCD(12345, clock="TOP.clk")  # type: ignore
 
     def test_last_clock_is_valid(self, vcdset):
         """Test that last_clock timestamp is valid."""
@@ -91,8 +93,8 @@ class TestVCDSetInit:
 
 
 # Test get() Method - Basic Functionality
-class TestVCDSetGetBasic:
-    """Tests for basic VCDSet.get() functionality"""
+class TestSetVCDGetBasic:
+    """Tests for basic SetVCD.get() functionality"""
 
     def test_get_returns_set(self, vcdset):
         """Test that get() returns a set of integers."""
@@ -103,13 +105,17 @@ class TestVCDSetGetBasic:
 
     def test_rising_edge_detection(self, vcdset):
         """Test detecting rising edges (0 -> 1 transitions)."""
-        rising_edges = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        rising_edges = vcdset.get(
+            "TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1"
+        )
         assert isinstance(rising_edges, set)
         assert len(rising_edges) > 0  # Should have at least some rising edges
 
     def test_falling_edge_detection(self, vcdset):
         """Test detecting falling edges (1 -> 0 transitions)."""
-        falling_edges = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "1" and s == "0")
+        falling_edges = vcdset.get(
+            "TOP.clk", lambda sm1, s, sp1: sm1 == "1" and s == "0"
+        )
         assert isinstance(falling_edges, set)
         assert len(falling_edges) > 0  # Should have at least some falling edges
 
@@ -134,12 +140,14 @@ class TestVCDSetGetBasic:
 
 
 # Test get() Method - Signal Validation
-class TestVCDSetGetValidation:
+class TestSetVCDGetValidation:
     """Tests for signal validation in get() method"""
 
     def test_signal_not_found(self, vcdset):
         """Test error when signal doesn't exist."""
-        with pytest.raises(SignalNotFoundError, match="Signal 'nonexistent_signal' not found"):
+        with pytest.raises(
+            SignalNotFoundError, match="Signal 'nonexistent_signal' not found"
+        ):
             vcdset.get("nonexistent_signal", lambda sm1, s, sp1: True)
 
     def test_signal_not_found_with_suggestion(self, vcdset):
@@ -158,12 +166,14 @@ class TestVCDSetGetValidation:
         def bad_condition(sm1, s, sp1):
             raise ValueError("Intentional error")
 
-        with pytest.raises(InvalidSignalConditionError, match="raised exception at time"):
+        with pytest.raises(
+            InvalidSignalConditionError, match="raised exception at time"
+        ):
             vcdset.get("TOP.clk", bad_condition)
 
 
 # Test get() Method - Boundary Conditions
-class TestVCDSetGetBoundary:
+class TestSetVCDGetBoundary:
     """Tests for boundary conditions in get() method"""
 
     def test_boundary_sm1_is_none_at_time_zero(self, vcdset):
@@ -178,14 +188,16 @@ class TestVCDSetGetBoundary:
 
     def test_boundary_both_none_only_at_extremes(self, vcdset):
         """Test that both sm1 and sp1 are not None except at boundaries."""
-        times_with_none = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 is None or sp1 is None)
+        times_with_none = vcdset.get(
+            "TOP.clk", lambda sm1, s, sp1: sm1 is None or sp1 is None
+        )
         # Should include at least time 0 and last_clock
         assert 0 in times_with_none
         assert vcdset.last_clock in times_with_none
 
 
 # Test get() Method - Multi-bit Signals
-class TestVCDSetGetMultiBit:
+class TestSetVCDGetMultiBit:
     """Tests for multi-bit signal handling"""
 
     def test_multibit_signal_pattern_matching(self, vcdset):
@@ -193,31 +205,38 @@ class TestVCDSetGetMultiBit:
         # s_axis_tdata is a 32-bit signal
         # Check for any specific pattern (e.g., all zeros)
         result = vcdset.get(
-            "TOP.io_input_payload_fragment_value_0[15:0]", lambda sm1, s, sp1: s == "00000000000000000000000000000000"
+            "TOP.io_input_payload_fragment_value_0[15:0]",
+            lambda sm1, s, sp1: s == "00000000000000000000000000000000",
         )
         assert isinstance(result, set)
 
     def test_multibit_signal_change_detection(self, vcdset):
         """Test detecting changes in multi-bit signals."""
         changes = vcdset.get(
-            "TOP.io_input_payload_fragment_value_0[15:0]", lambda sm1, s, sp1: sm1 is not None and sm1 != s
+            "TOP.io_input_payload_fragment_value_0[15:0]",
+            lambda sm1, s, sp1: sm1 is not None and sm1 != s,
         )
         assert isinstance(changes, set)
 
     def test_multibit_signal_keep_field(self, vcdset):
         """Test 4-bit keep field (s_axis_tkeep)."""
         # Check for all-enabled pattern (4'b1111)
-        all_enabled = vcdset.get("TOP.io_input_payload_fragment_value_0[15:0]", lambda sm1, s, sp1: s == "1111")
+        all_enabled = vcdset.get(
+            "TOP.io_input_payload_fragment_value_0[15:0]",
+            lambda sm1, s, sp1: s == "1111",
+        )
         assert isinstance(all_enabled, set)
 
 
 # Test Set Operations
-class TestVCDSetOperations:
+class TestSetVCDOperations:
     """Tests for combining results with set operations"""
 
     def test_intersection_rising_edge_and_valid(self, vcdset):
         """Test finding clock rising edges when a signal is valid."""
-        rising_edges = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        rising_edges = vcdset.get(
+            "TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1"
+        )
         valid_high = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
 
         # Times when both conditions are true
@@ -263,7 +282,7 @@ class TestVCDSetOperations:
 
 
 # Test Real-World Hardware Patterns
-class TestVCDSetHardwarePatterns:
+class TestSetVCDHardwarePatterns:
     """Tests for common hardware verification patterns"""
 
     def test_axi_stream_handshake(self, vcdset):
@@ -284,12 +303,16 @@ class TestVCDSetHardwarePatterns:
 
     def test_last_signal_assertion(self, vcdset):
         """Test when tlast is asserted."""
-        last_high = vcdset.get("TOP.io_input_payload_last", lambda sm1, s, sp1: s == "1")
+        last_high = vcdset.get(
+            "TOP.io_input_payload_last", lambda sm1, s, sp1: s == "1"
+        )
         assert isinstance(last_high, set)
 
     def test_reset_deassert_time(self, vcdset):
         """Test finding when reset is deasserted (1 -> 0)."""
-        reset_deassert = vcdset.get("TOP.reset", lambda sm1, s, sp1: sm1 == "1" and s == "0")
+        reset_deassert = vcdset.get(
+            "TOP.reset", lambda sm1, s, sp1: sm1 == "1" and s == "0"
+        )
         assert isinstance(reset_deassert, set)
 
     def test_clock_rising_during_valid_transfer(self, vcdset):
@@ -304,7 +327,7 @@ class TestVCDSetHardwarePatterns:
 
 
 # Test Edge Cases
-class TestVCDSetEdgeCases:
+class TestSetVCDEdgeCases:
     """Tests for edge cases and corner scenarios"""
 
     def test_empty_result_set(self, vcdset):
@@ -333,7 +356,7 @@ class TestVCDSetEdgeCases:
 
 
 # Test Consistency Between Initialization Methods
-class TestVCDSetConsistency:
+class TestSetVCDConsistency:
     """Tests for consistency between different initialization methods"""
 
     def test_same_results_from_filename_and_object(self, vcd_file_path):
@@ -341,11 +364,11 @@ class TestVCDSetConsistency:
         import vcdvcd
 
         # Initialize from filename
-        vs1 = VCDSet(str(vcd_file_path), clock="TOP.clk")
+        vs1 = SetVCD(str(vcd_file_path), clock="TOP.clk")
 
         # Initialize from vcdvcd object
         vcd = vcdvcd.VCDVCD(str(vcd_file_path))
-        vs2 = VCDSet(vcd, clock="TOP.clk")
+        vs2 = SetVCD(vcd, clock="TOP.clk")
 
         # Should have same last_clock
         assert vs1.last_clock == vs2.last_clock
@@ -357,7 +380,7 @@ class TestVCDSetConsistency:
 
 
 # Performance/Sanity Tests
-class TestVCDSetSanity:
+class TestSetVCDSanity:
     """Sanity tests for performance and correctness"""
 
     def test_rising_and_falling_edges_disjoint(self, vcdset):
@@ -393,24 +416,26 @@ if __name__ == "__main__":
 
 
 # Test get_values() Method
-class TestVCDSetGetValues:
-    """Tests for VCDSet.get_values() method"""
+class TestSetVCDGetValues:
+    """Tests for SetVCD.get_values() method"""
 
     def test_get_values_returns_list_of_tuples(self, vcdset):
         """Test that get_values() returns a list of (time, value) tuples."""
         rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
         values = vcdset.get_values("TOP.io_input_valid", rising)
-        
+
         assert isinstance(values, list)
         assert all(isinstance(item, tuple) for item in values)
         assert all(len(item) == 2 for item in values)
-        assert all(isinstance(item[0], int) and isinstance(item[1], str) for item in values)
+        assert all(
+            isinstance(item[0], int) and isinstance(item[1], str) for item in values
+        )
 
     def test_get_values_sorted_by_time(self, vcdset):
         """Test that results are sorted by time."""
         rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
         values = vcdset.get_values("TOP.io_input_valid", rising)
-        
+
         times = [t for t, v in values]
         assert times == sorted(times)
 
@@ -430,12 +455,14 @@ class TestVCDSetGetValues:
         """Test get_values with multi-bit signal."""
         rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
         timesteps = set(list(rising)[:5])  # First 5 rising edges
-        
-        values = vcdset.get_values("TOP.io_input_payload_fragment_value_0[15:0]", timesteps)
+
+        values = vcdset.get_values(
+            "TOP.io_input_payload_fragment_value_0[15:0]", timesteps
+        )
         assert len(values) == 5
         # Multi-bit values should be binary strings
         assert all(len(v) == 16 for _, v in values)
-        assert all(all(c in '01xz' for c in v) for _, v in values)
+        assert all(all(c in "01xz" for c in v) for _, v in values)
 
     def test_get_values_signal_not_found(self, vcdset):
         """Test error when signal doesn't exist."""
@@ -448,10 +475,12 @@ class TestVCDSetGetValues:
         valid = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
         ready = vcdset.get("TOP.io_input_ready", lambda sm1, s, sp1: s == "1")
         handshakes = valid & ready
-        
+
         # Get data values at handshake times
-        data_values = vcdset.get_values("TOP.io_input_payload_fragment_value_0[15:0]", handshakes)
-        
+        data_values = vcdset.get_values(
+            "TOP.io_input_payload_fragment_value_0[15:0]", handshakes
+        )
+
         assert len(data_values) == len(handshakes)
         assert all(isinstance(time, int) for time, _ in data_values)
         assert all(isinstance(value, str) for _, value in data_values)
@@ -460,8 +489,8 @@ class TestVCDSetGetValues:
         """Test that original timestep set is unchanged."""
         timesteps = {10, 20, 30, 40, 50}
         original_timesteps = timesteps.copy()
-        
+
         values = vcdset.get_values("TOP.clk", timesteps)
-        
+
         assert timesteps == original_timesteps  # Set unchanged
         assert len(values) == len(timesteps)
