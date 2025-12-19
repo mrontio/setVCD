@@ -32,7 +32,7 @@ jobs:
 
     - name: Run tests with pytest
       run: |
-        pytest --cov=vcd2set --cov-report=xml --cov-report=term
+        pytest --cov=setVCD --cov-report=xml --cov-report=term
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
@@ -61,19 +61,19 @@ jobs:
 
     - name: Check code formatting with black
       run: |
-        black --check vcd2set tests
+        black --check setVCD tests
 
     - name: Check import sorting with isort
       run: |
-        isort --check-only vcd2set tests
+        isort --check-only setVCD tests
 
     - name: Lint with ruff
       run: |
-        ruff check vcd2set tests
+        ruff check setVCD tests
 
     - name: Type check with mypy
       run: |
-        mypy vcd2set
+        mypy setVCD
 
   build:
     name: Build Package

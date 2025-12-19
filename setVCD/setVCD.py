@@ -1,4 +1,4 @@
-"""VCD2Set - Convert VCD signals to sets of time points based on conditions."""
+"""SetVCD - Convert VCD signals to sets of time points based on conditions."""
 
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -18,7 +18,7 @@ from .exceptions import (
 from .types import SignalCondition, SignalProtocol, Time, VCDInput, VCDVCDProtocol
 
 
-class VCDSet:
+class SetVCD:
     """
     Query VCD signals with functionally, and combine them with set theory operators.
     """

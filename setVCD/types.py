@@ -1,4 +1,4 @@
-"""Type definitions and protocols for VCD2Set package."""
+"""Type definitions and protocols for setVCD package."""
 
 from pathlib import Path
 from typing import Callable, List, Optional, Protocol, Tuple, Union
@@ -80,7 +80,7 @@ Examples:
 """
 
 VCDInput = Union[str, Path, VCDVCDProtocol]
-"""Type for VCD input to VCDSet.
+"""Type for VCD input to SetVCD.
 
 Can be:
 - str: Filename path to VCD file
