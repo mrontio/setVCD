@@ -18,6 +18,39 @@ from .exceptions import (
 from .types import SignalCondition, SignalProtocol, Time, VCDInput, VCDVCDProtocol
 
 
+def _value_to_int(value: str) -> Optional[int]:
+    """Convert VCD string value to Optional[int].
+
+    Converts binary string to decimal integer. Returns None if value
+    contains 'x' or 'z' (unknown/high-impedance).
+
+    Args:
+        value: VCD signal value string (e.g., "0", "1", "1010", "x", "01xz")
+
+    Returns:
+        Integer if all bits are 0/1, None if any x/z present
+
+    Examples:
+        "0" -> 0
+        "1" -> 1
+        "1010" -> 10
+        "x" -> None
+        "z" -> None
+        "01xz" -> None
+    """
+    # Case-insensitive check for unknown/high-impedance
+    value_lower = value.lower()
+    if "x" in value_lower or "z" in value_lower:
+        return None
+
+    # Binary to decimal conversion
+    try:
+        return int(value, 2)
+    except ValueError:
+        # Defensive: malformed VCD value
+        return None
+
+
 class SetVCD:
     """
     Query VCD signals with functionally, and combine them with set theory operators.
@@ -178,12 +211,20 @@ class SetVCD:
 
         for time in range(0, self.last_clock + 1):
             try:
-                # Get signal values at time-1, time, and time+1
-                # Use None for boundary conditions
-                sm1: Optional[str] = signal_obj[time - 1] if time > 0 else None
-                s: str = signal_obj[time]
-                sp1: Optional[str] = (
+                # Get raw string values from vcdvcd
+                sm1_str: Optional[str] = signal_obj[time - 1] if time > 0 else None
+                s_str: str = signal_obj[time]
+                sp1_str: Optional[str] = (
                     signal_obj[time + 1] if time < self.last_clock else None
+                )
+
+                # Convert to integers (None for boundaries or x/z)
+                sm1: Optional[int] = (
+                    _value_to_int(sm1_str) if sm1_str is not None else None
+                )
+                s: Optional[int] = _value_to_int(s_str)
+                sp1: Optional[int] = (
+                    _value_to_int(sp1_str) if sp1_str is not None else None
                 )
 
                 # Evaluate user's condition
@@ -191,7 +232,8 @@ class SetVCD:
                     check = signal_condition(sm1, s, sp1)
                 except Exception as e:
                     raise InvalidSignalConditionError(
-                        f"signal_condition raised exception at time {time}: {e}"
+                        f"signal_condition raised exception at time {time}: {e}. "
+                        f"Note: signal values can be None (for x/z values or boundaries)."
                     ) from e
 
                 # Add time to result set if condition is True
@@ -211,7 +253,7 @@ class SetVCD:
 
     def get_values(
         self, signal_name: str, timesteps: Set[Time]
-    ) -> List[Tuple[Time, str]]:
+    ) -> List[Tuple[Time, Optional[int]]]:
         """Get signal values at specific timesteps.
 
         This method takes a set of timesteps (typically from get()) and returns
@@ -223,8 +265,8 @@ class SetVCD:
             timesteps: Set of integer timesteps to query. Can be empty.
 
         Returns:
-            List of (time, value) tuples sorted by time. Values are strings
-            like '0', '1', 'x', 'z', or multi-bit like '0101'.
+            List of (time, value) tuples sorted by time. Values are Optional[int]:
+            integers for valid binary values (decimal conversion), None for x/z.
 
         """
         # Validate signal exists
@@ -264,11 +306,12 @@ class SetVCD:
             raise VCDParseError(f"Failed to access signal '{signal_name}': {e}") from e
 
         # Get values at each timestep and sort by time
-        result: List[Tuple[Time, str]] = []
+        result: List[Tuple[Time, Optional[int]]] = []
         for time in timesteps:
             try:
-                value = signal_obj[time]
-                result.append((time, value))
+                value_str: str = signal_obj[time]
+                value_int: Optional[int] = _value_to_int(value_str)
+                result.append((time, value_int))
             except Exception as e:
                 raise VCDParseError(
                     f"Failed to access signal '{signal_name}' at time {time}: {e}"

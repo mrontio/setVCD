@@ -7,8 +7,8 @@ from typing import Callable, List, Optional, Protocol, Tuple, Union
 Time = int
 """Integer timestamp in VCD time units."""
 
-Value = str
-"""Signal value as string: '0', '1', 'x', 'z', or multi-bit like '0101'."""
+Value = Optional[int]
+"""Signal value as integer (binary conversion) or None (for x/z/boundaries)."""
 
 TimeValue = Tuple[Time, Value]
 """Tuple of (time, value) representing a signal transition."""
@@ -24,9 +24,10 @@ class SignalProtocol(Protocol):
     tv: List[TimeValue]
     """List of (time, value) tuples representing signal transitions."""
 
-    def __getitem__(self, time: Time) -> Value:
+    def __getitem__(self, time: Time) -> str:
         """Random access to get signal value at specific time.
 
+        Returns RAW string value from vcdvcd - will be converted by SetVCD layer.
         Uses binary search to interpolate value at any time point,
         even between transitions.
         """
@@ -56,13 +57,13 @@ class VCDVCDProtocol(Protocol):
         ...
 
 
-SignalCondition = Callable[[Optional[Value], Value, Optional[Value]], bool]
+SignalCondition = Callable[[Optional[int], Optional[int], Optional[int]], bool]
 """Type for signal condition callbacks.
 
 A SignalCondition is a function that takes:
-- sm1: Signal value at time-1 (None if at time 0)
-- s: Signal value at current time
-- sp1: Signal value at time+1 (None if at last time)
+- sm1: Signal value at time-1 (None if at time 0 or if value is x/z)
+- s: Signal value at current time (None if value is x/z)
+- sp1: Signal value at time+1 (None if at last time or if value is x/z)
 
 Returns:
 - True if this time point should be included in the result set
@@ -70,10 +71,10 @@ Returns:
 
 Examples:
     >>> # Rising edge detector
-    >>> rising_edge: SignalCondition = lambda sm1, s, sp1: sm1 == "0" and s == "1"
+    >>> rising_edge: SignalCondition = lambda sm1, s, sp1: sm1 == 0 and s == 1
     >>>
     >>> # High level detector
-    >>> is_high: SignalCondition = lambda sm1, s, sp1: s == "1"
+    >>> is_high: SignalCondition = lambda sm1, s, sp1: s == 1
     >>>
     >>> # Change detector
     >>> changed: SignalCondition = lambda sm1, s, sp1: sm1 is not None and sm1 != s

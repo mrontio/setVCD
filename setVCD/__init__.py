@@ -14,7 +14,7 @@ from .exceptions import (
 from .setVCD import SetVCD
 from .types import SignalCondition, Time, TimeValue, Value, VCDInput
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "SetVCD",
     # Exceptions

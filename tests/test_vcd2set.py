@@ -99,35 +99,31 @@ class TestSetVCDGetBasic:
     def test_get_returns_set(self, vcdset):
         """Test that get() returns a set of integers."""
         # Get times when reset is high (active)
-        result = vcdset.get("TOP.reset", lambda sm1, s, sp1: s == "1")
+        result = vcdset.get("TOP.reset", lambda sm1, s, sp1: s == 1)
         assert isinstance(result, set)
         assert all(isinstance(t, int) for t in result)
 
     def test_rising_edge_detection(self, vcdset):
         """Test detecting rising edges (0 -> 1 transitions)."""
-        rising_edges = vcdset.get(
-            "TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1"
-        )
+        rising_edges = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
         assert isinstance(rising_edges, set)
         assert len(rising_edges) > 0  # Should have at least some rising edges
 
     def test_falling_edge_detection(self, vcdset):
         """Test detecting falling edges (1 -> 0 transitions)."""
-        falling_edges = vcdset.get(
-            "TOP.clk", lambda sm1, s, sp1: sm1 == "1" and s == "0"
-        )
+        falling_edges = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 1 and s == 0)
         assert isinstance(falling_edges, set)
         assert len(falling_edges) > 0  # Should have at least some falling edges
 
     def test_high_level_detection(self, vcdset):
         """Test detecting when signal is high."""
-        high_times = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == "1")
+        high_times = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == 1)
         assert isinstance(high_times, set)
         assert len(high_times) > 0
 
     def test_low_level_detection(self, vcdset):
         """Test detecting when signal is low."""
-        low_times = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == "0")
+        low_times = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == 0)
         assert isinstance(low_times, set)
         assert len(low_times) > 0
 
@@ -206,7 +202,7 @@ class TestSetVCDGetMultiBit:
         # Check for any specific pattern (e.g., all zeros)
         result = vcdset.get(
             "TOP.io_input_payload_fragment_value_0[15:0]",
-            lambda sm1, s, sp1: s == "00000000000000000000000000000000",
+            lambda sm1, s, sp1: s == 0,
         )
         assert isinstance(result, set)
 
@@ -220,10 +216,10 @@ class TestSetVCDGetMultiBit:
 
     def test_multibit_signal_keep_field(self, vcdset):
         """Test 4-bit keep field (s_axis_tkeep)."""
-        # Check for all-enabled pattern (4'b1111)
+        # Check for all-enabled pattern (4'b1111 = decimal 15)
         all_enabled = vcdset.get(
             "TOP.io_input_payload_fragment_value_0[15:0]",
-            lambda sm1, s, sp1: s == "1111",
+            lambda sm1, s, sp1: s == 15,
         )
         assert isinstance(all_enabled, set)
 
@@ -234,10 +230,8 @@ class TestSetVCDOperations:
 
     def test_intersection_rising_edge_and_valid(self, vcdset):
         """Test finding clock rising edges when a signal is valid."""
-        rising_edges = vcdset.get(
-            "TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1"
-        )
-        valid_high = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
+        rising_edges = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+        valid_high = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == 1)
 
         # Times when both conditions are true
         valid_rising_edges = rising_edges & valid_high
@@ -248,8 +242,8 @@ class TestSetVCDOperations:
 
     def test_union_multiple_conditions(self, vcdset):
         """Test union of multiple conditions."""
-        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
-        falling = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "1" and s == "0")
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+        falling = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 1 and s == 0)
 
         # All edges (rising or falling)
         all_edges = rising | falling
@@ -260,7 +254,7 @@ class TestSetVCDOperations:
     def test_difference_operation(self, vcdset):
         """Test set difference operation."""
         all_times = vcdset.get("TOP.clk", lambda sm1, s, sp1: True)
-        reset_active = vcdset.get("TOP.reset", lambda sm1, s, sp1: s == "1")
+        reset_active = vcdset.get("TOP.reset", lambda sm1, s, sp1: s == 1)
 
         # Times when not in reset
         not_in_reset = all_times - reset_active
@@ -270,8 +264,8 @@ class TestSetVCDOperations:
 
     def test_symmetric_difference(self, vcdset):
         """Test symmetric difference (XOR) operation."""
-        valid_high = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
-        ready_high = vcdset.get("TOP.io_input_ready", lambda sm1, s, sp1: s == "1")
+        valid_high = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == 1)
+        ready_high = vcdset.get("TOP.io_input_ready", lambda sm1, s, sp1: s == 1)
 
         # Times when exactly one is high (not both)
         exclusive = valid_high ^ ready_high
@@ -287,8 +281,8 @@ class TestSetVCDHardwarePatterns:
 
     def test_axi_stream_handshake(self, vcdset):
         """Test AXI Stream handshake (valid & ready both high)."""
-        valid_high = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
-        ready_high = vcdset.get("TOP.io_input_ready", lambda sm1, s, sp1: s == "1")
+        valid_high = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == 1)
+        ready_high = vcdset.get("TOP.io_input_ready", lambda sm1, s, sp1: s == 1)
 
         # Handshake occurs when both are high
         handshake_times = valid_high & ready_high
@@ -297,29 +291,27 @@ class TestSetVCDHardwarePatterns:
     def test_axi_stream_valid_rising_edge(self, vcdset):
         """Test AXI Stream valid signal rising edge."""
         valid_rising = vcdset.get(
-            "TOP.io_input_valid", lambda sm1, s, sp1: sm1 == "0" and s == "1"
+            "TOP.io_input_valid", lambda sm1, s, sp1: sm1 == 0 and s == 1
         )
         assert isinstance(valid_rising, set)
 
     def test_last_signal_assertion(self, vcdset):
         """Test when tlast is asserted."""
-        last_high = vcdset.get(
-            "TOP.io_input_payload_last", lambda sm1, s, sp1: s == "1"
-        )
+        last_high = vcdset.get("TOP.io_input_payload_last", lambda sm1, s, sp1: s == 1)
         assert isinstance(last_high, set)
 
     def test_reset_deassert_time(self, vcdset):
         """Test finding when reset is deasserted (1 -> 0)."""
         reset_deassert = vcdset.get(
-            "TOP.reset", lambda sm1, s, sp1: sm1 == "1" and s == "0"
+            "TOP.reset", lambda sm1, s, sp1: sm1 == 1 and s == 0
         )
         assert isinstance(reset_deassert, set)
 
     def test_clock_rising_during_valid_transfer(self, vcdset):
         """Test clock edges during valid AXI transfers."""
-        clk_rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
-        valid_high = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
-        ready_high = vcdset.get("TOP.io_input_ready", lambda sm1, s, sp1: s == "1")
+        clk_rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+        valid_high = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == 1)
+        ready_high = vcdset.get("TOP.io_input_ready", lambda sm1, s, sp1: s == 1)
 
         # Clock rising edges during handshake
         transfer_clocks = clk_rising & valid_high & ready_high
@@ -333,7 +325,7 @@ class TestSetVCDEdgeCases:
     def test_empty_result_set(self, vcdset):
         """Test that impossible conditions return empty set."""
         # Condition that's never true (signal can't be both 0 and 1)
-        result = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == "0" and s == "1")
+        result = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == 0 and s == 1)
         assert result == set()
 
     def test_full_time_range_result(self, vcdset):
@@ -343,14 +335,14 @@ class TestSetVCDEdgeCases:
 
     def test_using_only_current_value(self, vcdset):
         """Test condition that only uses current value (ignores sm1, sp1)."""
-        result = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == "1")
+        result = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == 1)
         assert isinstance(result, set)
 
     def test_using_all_three_values(self, vcdset):
         """Test condition using all three time points."""
         # Pattern: was 0, now 1, will be 1 (rising edge that stays high)
         result = vcdset.get(
-            "TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1" and sp1 == "1"
+            "TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1 and sp1 == 1
         )
         assert isinstance(result, set)
 
@@ -374,8 +366,8 @@ class TestSetVCDConsistency:
         assert vs1.last_clock == vs2.last_clock
 
         # Should produce same results for same query
-        result1 = vs1.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
-        result2 = vs2.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        result1 = vs1.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+        result2 = vs2.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
         assert result1 == result2
 
 
@@ -385,16 +377,16 @@ class TestSetVCDSanity:
 
     def test_rising_and_falling_edges_disjoint(self, vcdset):
         """Test that rising and falling edges don't overlap."""
-        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
-        falling = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "1" and s == "0")
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+        falling = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 1 and s == 0)
 
         # Should have no overlap
         assert (rising & falling) == set()
 
     def test_all_times_partition(self, vcdset):
         """Test that high and low times partition the full time range."""
-        high = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == "1")
-        low = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == "0")
+        high = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == 1)
+        low = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == 0)
 
         # Should be disjoint
         assert (high & low) == set()
@@ -405,10 +397,82 @@ class TestSetVCDSanity:
 
     def test_result_times_within_bounds(self, vcdset):
         """Test that all result times are within valid range."""
-        result = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
+        result = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == 1)
 
         for time in result:
             assert 0 <= time <= vcdset.last_clock
+
+
+# Test Integer Conversion
+class TestSetVCDIntegerConversion:
+    """Tests for integer conversion of signal values"""
+
+    def test_single_bit_zero(self, vcdset):
+        """Test single-bit 0 converts to integer 0."""
+        zeros = vcdset.get("TOP.clk", lambda tm1, t, tp1: t == 0)
+        assert isinstance(zeros, set)
+        assert len(zeros) > 0
+
+    def test_single_bit_one(self, vcdset):
+        """Test single-bit 1 converts to integer 1."""
+        ones = vcdset.get("TOP.clk", lambda tm1, t, tp1: t == 1)
+        assert isinstance(ones, set)
+        assert len(ones) > 0
+
+    def test_multibit_decimal_conversion(self, vcdset):
+        """Test multi-bit binary converts to decimal."""
+        # Find times when 16-bit signal equals specific decimal value
+        result = vcdset.get(
+            "TOP.io_input_payload_fragment_value_0[15:0]",
+            lambda tm1, t, tp1: t == 15,  # Binary 1111 or 0...01111
+        )
+        assert isinstance(result, set)
+
+    def test_arithmetic_comparisons_greater_than(self, vcdset):
+        """Test that arithmetic > comparisons work with integers."""
+        high_values = vcdset.get(
+            "TOP.io_input_payload_fragment_value_0[15:0]",
+            lambda tm1, t, tp1: t is not None and t > 100,
+        )
+        assert isinstance(high_values, set)
+
+    def test_arithmetic_comparisons_less_than(self, vcdset):
+        """Test that arithmetic < comparisons work with integers."""
+        low_values = vcdset.get(
+            "TOP.io_input_payload_fragment_value_0[15:0]",
+            lambda tm1, t, tp1: t is not None and t < 10,
+        )
+        assert isinstance(low_values, set)
+
+    def test_arithmetic_comparisons_range(self, vcdset):
+        """Test that range comparisons work with integers."""
+        range_values = vcdset.get(
+            "TOP.io_input_payload_fragment_value_0[15:0]",
+            lambda tm1, t, tp1: t is not None and 10 <= t < 100,
+        )
+        assert isinstance(range_values, set)
+
+    def test_none_for_boundaries_still_works(self, vcdset):
+        """Test None handling for boundaries unchanged."""
+        first_time = vcdset.get("TOP.clk", lambda tm1, t, tp1: tm1 is None)
+        assert 0 in first_time
+
+        last_time = vcdset.get("TOP.clk", lambda tm1, t, tp1: tp1 is None)
+        assert vcdset.last_clock in last_time
+
+    def test_get_values_returns_integers(self, vcdset):
+        """Test get_values returns integers not strings."""
+        values = vcdset.get_values("TOP.clk", {10, 20, 30})
+        assert all(isinstance(v, (int, type(None))) for _, v in values)
+        assert all(v in (0, 1, None) for _, v in values)  # Clock is single-bit
+
+    def test_multibit_comparison_with_decimal(self, vcdset):
+        """Test comparing multi-bit signals with decimal values."""
+        # Check for zero
+        zeros = vcdset.get(
+            "TOP.io_input_payload_fragment_value_0[15:0]", lambda tm1, t, tp1: t == 0
+        )
+        assert isinstance(zeros, set)
 
 
 if __name__ == "__main__":
@@ -421,19 +485,20 @@ class TestSetVCDGetValues:
 
     def test_get_values_returns_list_of_tuples(self, vcdset):
         """Test that get_values() returns a list of (time, value) tuples."""
-        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
         values = vcdset.get_values("TOP.io_input_valid", rising)
 
         assert isinstance(values, list)
         assert all(isinstance(item, tuple) for item in values)
         assert all(len(item) == 2 for item in values)
         assert all(
-            isinstance(item[0], int) and isinstance(item[1], str) for item in values
+            isinstance(item[0], int) and isinstance(item[1], (int, type(None)))
+            for item in values
         )
 
     def test_get_values_sorted_by_time(self, vcdset):
         """Test that results are sorted by time."""
-        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
         values = vcdset.get_values("TOP.io_input_valid", rising)
 
         times = [t for t, v in values]
@@ -449,20 +514,20 @@ class TestSetVCDGetValues:
         values = vcdset.get_values("TOP.clk", {0})
         assert len(values) == 1
         assert values[0][0] == 0
-        assert isinstance(values[0][1], str)
+        assert isinstance(values[0][1], (int, type(None)))
 
     def test_get_values_multibit_signal(self, vcdset):
         """Test get_values with multi-bit signal."""
-        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
         timesteps = set(list(rising)[:5])  # First 5 rising edges
 
         values = vcdset.get_values(
             "TOP.io_input_payload_fragment_value_0[15:0]", timesteps
         )
         assert len(values) == 5
-        # Multi-bit values should be binary strings
-        assert all(len(v) == 16 for _, v in values)
-        assert all(all(c in "01xz" for c in v) for _, v in values)
+        # Multi-bit values should be integers or None
+        assert all(isinstance(v, (int, type(None))) for _, v in values)
+        assert all(v is None or v >= 0 for _, v in values)
 
     def test_get_values_signal_not_found(self, vcdset):
         """Test error when signal doesn't exist."""

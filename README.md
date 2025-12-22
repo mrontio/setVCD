@@ -32,7 +32,7 @@ from setVCD import SetVCD
 vcd_path = "./tests/fixtures/wave.vcd"
 sv = SetVCD(vcd_path, clock="TOP.clk")
 
-rising_edges = sv.get("TOP.clk", lambda tm1, t, tp1: tm1 == "0" and t == "1")
+rising_edges = sv.get("TOP.clk", lambda tm1, t, tp1: tm1 == 0 and t == 1)
 print(rising_edges)
 # {34, 36, 38, 40, 42, 44, ...}
 ```
@@ -40,7 +40,7 @@ print(rising_edges)
 Because `rising_edges` is returned as a set, we can use set operations to combine it with other signals:
 ```python
 # Get times when the reset signal is 0
-reset_is_0 = sv.get("TOP.reset", lambda tm1, t, tp1: t == "0")
+reset_is_0 = sv.get("TOP.reset", lambda tm1, t, tp1: t == 0)
 # Use set intersection to get valid clock updates.
 clock_update = rising_edges & reset_is_0
 ```
@@ -51,8 +51,8 @@ Finally, you can search the wavefile with a regex (e.g. "output"), and apply the
 sv.search("output")
 
 # Get times when output_valid and output_ready are asserted.
-out_valid = sv.get("TOP.Accelerator.io_output_valid", lambda tm1, t, tp1: t == "1")
-out_ready = sv.get("TOP.Accelerator.io_output_ready", lambda tm1, t, tp1: t == "1")
+out_valid = sv.get("TOP.Accelerator.io_output_valid", lambda tm1, t, tp1: t == 1)
+out_ready = sv.get("TOP.Accelerator.io_output_ready", lambda tm1, t, tp1: t == 1)
 
 # Get timesteps of valid outputs
 valid_output_timesteps = rising_edges & reset0 & out_ready & out_valid
@@ -60,7 +60,7 @@ valid_output_timesteps = rising_edges & reset0 & out_ready & out_valid
 # Get the values of the Stream `value` signal (the data) at timesteps when it is valid
 outputs = sv.get_values("TOP.Accelerator.io_output_payload_fragment_value_0[0:0]", valid_output_timesteps)
 print(outputs)
-# [(52, '0'), (62, '0'), (72, '1'), ...]
+# [(52, 0), (62, 0), (72, 1), ...]  # Integer values
 ```
 
 ## Overview
@@ -105,11 +105,13 @@ The `clock` parameter must be the exact name of the clock signal in your VCD fil
 
 The `signal_condition` callback receives three arguments representing the signal value at three consecutive time points:
 
-- `sm1`: Signal value at time-1 (None at time 0)
-- `s`: Signal value at current time
-- `sp1`: Signal value at time+1 (None at last time)
+- `sm1`: Signal value at time-1 (None at time 0 or if value is x/z)
+- `s`: Signal value at current time (None if value is x/z)
+- `sp1`: Signal value at time+1 (None at last time or if value is x/z)
 
-Signal values are strings: `'0'`, `'1'`, `'x'`, `'z'`, or multi-bit like `'0101'`.
+Signal values are `Optional[int]`:
+- Integers: Binary values converted to decimal (e.g., "1010" → 10)
+- None: Represents x/z values or boundary conditions (t-1 at time 0, t+1 at last time)
 
 The callback should return `True` to include that time point in the result set.
 
@@ -119,29 +121,29 @@ The callback should return `True` to include that time point in the result set.
 
 ```python
 # Rising edge: 0 -> 1 transition
-rising = sv.get("clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
+rising = sv.get("clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
 
 # Falling edge: 1 -> 0 transition
-falling = sv.get("clk", lambda sm1, s, sp1: sm1 == "1" and s == "0")
+falling = sv.get("clk", lambda sm1, s, sp1: sm1 == 1 and s == 0)
 
 # Any edge: value changed
 edges = sv.get("data", lambda sm1, s, sp1: sm1 is not None and sm1 != s)
 
 # Level high
-high = sv.get("enable", lambda sm1, s, sp1: s == "1")
+high = sv.get("enable", lambda sm1, s, sp1: s == 1)
 
 # Level low
-low = sv.get("reset", lambda sm1, s, sp1: s == "0")
+low = sv.get("reset", lambda sm1, s, sp1: s == 0)
 ```
 
 #### Multi-bit Signals
 
 ```python
-# Specific pattern on a bus
-pattern = sv.get("bus[3:0]", lambda sm1, s, sp1: s == "1010")
+# Specific pattern on a bus (binary "1010" = decimal 10)
+pattern = sv.get("bus[3:0]", lambda sm1, s, sp1: s == 10)
 
 # Bus is non-zero
-active = sv.get("data[7:0]", lambda sm1, s, sp1: s != "00000000")
+active = sv.get("data[7:0]", lambda sm1, s, sp1: s != 0)
 
 # Bus transition detection
 bus_changed = sv.get("addr[15:0]", lambda sm1, s, sp1: sm1 is not None and sm1 != s)
@@ -151,18 +153,18 @@ bus_changed = sv.get("addr[15:0]", lambda sm1, s, sp1: sm1 is not None and sm1 !
 
 ```python
 # Rising clock edges when enable is high
-clk_rising = sv.get("clk", lambda sm1, s, sp1: sm1 == "0" and s == "1")
-enable_high = sv.get("enable", lambda sm1, s, sp1: s == "1")
+clk_rising = sv.get("clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+enable_high = sv.get("enable", lambda sm1, s, sp1: s == 1)
 valid_clocks = clk_rising & enable_high
 
 # Data changes while not in reset
 data_changes = sv.get("data", lambda sm1, s, sp1: sm1 is not None and sm1 != s)
-not_reset = sv.get("reset", lambda sm1, s, sp1: s == "0")
+not_reset = sv.get("reset", lambda sm1, s, sp1: s == 0)
 valid_changes = data_changes & not_reset
 
 # Either signal is high
-sig1_high = sv.get("sig1", lambda sm1, s, sp1: s == "1")
-sig2_high = sv.get("sig2", lambda sm1, s, sp1: s == "1")
+sig1_high = sv.get("sig1", lambda sm1, s, sp1: s == 1)
+sig2_high = sv.get("sig2", lambda sm1, s, sp1: s == 1)
 either_high = sig1_high | sig2_high
 
 # Exclusive high (one but not both)
@@ -174,19 +176,19 @@ exclusive_high = sig1_high ^ sig2_high
 ```python
 # Detect setup violation: data changes right before clock edge
 data_change = sv.get("data", lambda sm1, s, sp1: sm1 is not None and sm1 != s)
-clk_about_to_rise = sv.get("clk", lambda sm1, s, sp1: s == "0" and sp1 == "1")
+clk_about_to_rise = sv.get("clk", lambda sm1, s, sp1: s == 0 and sp1 == 1)
 setup_violations = data_change & clk_about_to_rise
 
 # Handshake protocol: valid and ready both high
-valid_high = sv.get("valid", lambda sm1, s, sp1: s == "1")
-ready_high = sv.get("ready", lambda sm1, s, sp1: s == "1")
+valid_high = sv.get("valid", lambda sm1, s, sp1: s == 1)
+ready_high = sv.get("ready", lambda sm1, s, sp1: s == 1)
 handshake_times = valid_high & ready_high
 
-# State machine transitions
-state_a = sv.get("state[1:0]", lambda sm1, s, sp1: s == "00")
-state_b = sv.get("state[1:0]", lambda sm1, s, sp1: s == "01")
+# State machine transitions (binary "00" = 0, "01" = 1)
+state_a = sv.get("state[1:0]", lambda sm1, s, sp1: s == 0)
+state_b = sv.get("state[1:0]", lambda sm1, s, sp1: s == 1)
 # Times when transitioning from state A to state B
-transition = sv.get("state[1:0]", lambda sm1, s, sp1: sm1 == "00" and s == "01")
+transition = sv.get("state[1:0]", lambda sm1, s, sp1: sm1 == 0 and s == 1)
 ```
 ## Future Enhancements
 
