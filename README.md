@@ -22,7 +22,7 @@ $\texttt{get}: (\text{String}, ((\text{Bits}, \text{Bits}, \text{Bits}) \rightar
 
 As what is returned is a set, you can then use [set operations](https://en.wikipedia.org/wiki/Set_(mathematics)#Basic_operations) to manipulate them as needed, and finally extract the values from your desired signal using our `get_value` function:
 
-$\texttt{get-value}: (\text{String}, \text{Set(Timestep)}) \rightarrow \text{List(Bits)}$
+$\texttt{get-value}: (\text{String}, \text{Set(Timestep)}) \rightarrow \text{List((Timestep, Bits))}$
 
 Here's an example of finding the rising edges of the clock signal `TOP.clk` of our test wavefile `wave.vcd`:
 ```python
