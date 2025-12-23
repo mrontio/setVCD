@@ -463,9 +463,9 @@ class TestSetVCDIntegerConversion:
         last_time = vcdset.get("TOP.clk", lambda tm1, t, tp1: tp1 is None)
         assert vcdset.last_clock in last_time
 
-    def test_get_values_returns_integers(self, vcdset):
-        """Test get_values returns integers not strings."""
-        values = vcdset.get_values("TOP.clk", {10, 20, 30})
+    def test_get_values_with_t_returns_integers(self, vcdset):
+        """Test get_values_with_t returns integers not strings."""
+        values = vcdset.get_values_with_t("TOP.clk", {10, 20, 30})
         assert all(isinstance(v, (int, type(None))) for _, v in values)
         assert all(v in (0, 1, None) for _, v in values)  # Clock is single-bit
 
@@ -482,14 +482,14 @@ if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
 
-# Test get_values() Method
-class TestSetVCDGetValues:
-    """Tests for SetVCD.get_values() method"""
+# Test get_values_with_t() Method
+class TestSetVCDGetValuesWithT:
+    """Tests for SetVCD.get_values_with_t() method"""
 
-    def test_get_values_returns_list_of_tuples(self, vcdset):
-        """Test that get_values() returns a list of (time, value) tuples."""
+    def test_get_values_with_t_returns_list_of_tuples(self, vcdset):
+        """Test that get_values_with_t() returns a list of (time, value) tuples."""
         rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
-        values = vcdset.get_values("TOP.io_input_valid", rising)
+        values = vcdset.get_values_with_t("TOP.io_input_valid", rising)
 
         assert isinstance(values, list)
         assert all(isinstance(item, tuple) for item in values)
@@ -499,13 +499,82 @@ class TestSetVCDGetValues:
             for item in values
         )
 
-    def test_get_values_sorted_by_time(self, vcdset):
+    def test_get_values_with_t_sorted_by_time(self, vcdset):
         """Test that results are sorted by time."""
         rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
-        values = vcdset.get_values("TOP.io_input_valid", rising)
+        values = vcdset.get_values_with_t("TOP.io_input_valid", rising)
 
         times = [t for t, v in values]
         assert times == sorted(times)
+
+    def test_get_values_with_t_with_empty_set(self, vcdset):
+        """Test get_values_with_t with empty timestep set."""
+        values = vcdset.get_values_with_t("TOP.clk", set())
+        assert values == []
+
+    def test_get_values_with_t_single_timestep(self, vcdset):
+        """Test get_values_with_t with single timestep."""
+        values = vcdset.get_values_with_t("TOP.clk", {0})
+        assert len(values) == 1
+        assert values[0][0] == 0
+        assert isinstance(values[0][1], (int, type(None)))
+
+    def test_get_values_with_t_multibit_signal(self, vcdset):
+        """Test get_values_with_t with multi-bit signal."""
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+        timesteps = set(list(rising)[:5])  # First 5 rising edges
+
+        values = vcdset.get_values_with_t(
+            "TOP.io_input_payload_fragment_value_0[15:0]", timesteps
+        )
+        assert len(values) == 5
+        # Multi-bit values should be integers or None
+        assert all(isinstance(v, (int, type(None))) for _, v in values)
+        assert all(v is None or v >= 0 for _, v in values)
+
+    def test_get_values_with_t_signal_not_found(self, vcdset):
+        """Test error when signal doesn't exist."""
+        with pytest.raises(SignalNotFoundError):
+            vcdset.get_values_with_t("nonexistent_signal", {0, 1, 2})
+
+    def test_get_values_with_t_practical_example(self, vcdset):
+        """Test practical use case: get data values during handshakes."""
+        # Find handshake times
+        valid = vcdset.get("TOP.io_input_valid", lambda sm1, s, sp1: s == "1")
+        ready = vcdset.get("TOP.io_input_ready", lambda sm1, s, sp1: s == "1")
+        handshakes = valid & ready
+
+        # Get data values at handshake times
+        data_values = vcdset.get_values_with_t(
+            "TOP.io_input_payload_fragment_value_0[15:0]", handshakes
+        )
+
+        assert len(data_values) == len(handshakes)
+        assert all(isinstance(time, int) for time, _ in data_values)
+        assert all(isinstance(value, str) for _, value in data_values)
+
+    def test_get_values_with_t_preserves_timestep_set(self, vcdset):
+        """Test that original timestep set is unchanged."""
+        timesteps = {10, 20, 30, 40, 50}
+        original_timesteps = timesteps.copy()
+
+        values = vcdset.get_values_with_t("TOP.clk", timesteps)
+
+        assert timesteps == original_timesteps  # Set unchanged
+        assert len(values) == len(timesteps)
+
+
+# Test get_values() Method
+class TestSetVCDGetValues:
+    """Tests for SetVCD.get_values() method"""
+
+    def test_get_values_returns_list_of_values(self, vcdset):
+        """Test that get_values() returns a list of values tuples."""
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+        values = vcdset.get_values("TOP.io_input_valid", rising)
+
+        assert isinstance(values, list)
+        assert all(isinstance(item, (int, type(None))) for item in values)
 
     def test_get_values_with_empty_set(self, vcdset):
         """Test get_values with empty timestep set."""
@@ -516,8 +585,8 @@ class TestSetVCDGetValues:
         """Test get_values with single timestep."""
         values = vcdset.get_values("TOP.clk", {0})
         assert len(values) == 1
-        assert values[0][0] == 0
-        assert isinstance(values[0][1], (int, type(None)))
+        assert values[0] == 0
+        assert isinstance(values[0], (int, type(None)))
 
     def test_get_values_multibit_signal(self, vcdset):
         """Test get_values with multi-bit signal."""
@@ -529,8 +598,8 @@ class TestSetVCDGetValues:
         )
         assert len(values) == 5
         # Multi-bit values should be integers or None
-        assert all(isinstance(v, (int, type(None))) for _, v in values)
-        assert all(v is None or v >= 0 for _, v in values)
+        assert all(isinstance(v, (int, type(None))) for v in values)
+        assert all(v is None or v >= 0 for v in values)
 
     def test_get_values_signal_not_found(self, vcdset):
         """Test error when signal doesn't exist."""
@@ -550,8 +619,7 @@ class TestSetVCDGetValues:
         )
 
         assert len(data_values) == len(handshakes)
-        assert all(isinstance(time, int) for time, _ in data_values)
-        assert all(isinstance(value, str) for _, value in data_values)
+        assert all(isinstance(value, int) for value in data_values)
 
     def test_get_values_preserves_timestep_set(self, vcdset):
         """Test that original timestep set is unchanged."""
@@ -586,7 +654,7 @@ class TestValueTypeRaw:
         all_times = vcdset.get("TOP.clk", lambda sm1, s, sp1: True, value_type=Raw())
 
         # Values should be integers 0 or 1 for clock signal
-        values = vcdset.get_values("TOP.clk", all_times, value_type=Raw())
+        values = vcdset.get_values_with_t("TOP.clk", all_times, value_type=Raw())
 
         for _, value in values:
             assert isinstance(value, int)
@@ -597,7 +665,7 @@ class TestValueTypeRaw:
         # Get a timestep where we have data
         timesteps = {50, 100, 150}
 
-        values = vcdset.get_values(
+        values = vcdset.get_values_with_t(
             "TOP.io_input_payload_fragment_value_0[15:0]", timesteps, value_type=Raw()
         )
 
@@ -624,7 +692,7 @@ class TestValueTypeString:
         # Get some timesteps
         timesteps = {50, 100, 150}
 
-        values = vcdset.get_values("TOP.clk", timesteps, value_type=String())
+        values = vcdset.get_values_with_t("TOP.clk", timesteps, value_type=String())
 
         # Values should be strings "0" or "1"
         for _, value in values:
@@ -645,7 +713,7 @@ class TestValueTypeString:
         """Test String() with multi-bit signals."""
         timesteps = {50, 100, 150}
 
-        values = vcdset.get_values(
+        values = vcdset.get_values_with_t(
             "TOP.io_input_payload_fragment_value_0[15:0]",
             timesteps,
             value_type=String(),
@@ -678,7 +746,7 @@ class TestValueTypeFP:
         # Use clock signal: "0" -> 0.0, "1" -> 0.0625 with frac=4
         timesteps = {50, 100, 150}
 
-        values = vcdset.get_values(
+        values = vcdset.get_values_with_t(
             "TOP.clk", timesteps, value_type=FP(frac=4, signed=False)
         )
 
@@ -692,7 +760,7 @@ class TestValueTypeFP:
         """Test FP() with frac=0 (whole numbers)."""
         timesteps = {50, 100, 150}
 
-        values = vcdset.get_values(
+        values = vcdset.get_values_with_t(
             "TOP.clk", timesteps, value_type=FP(frac=0, signed=False)
         )
 
@@ -719,14 +787,16 @@ class TestValueTypeFP:
         from setVCD import VCDParseError
 
         with pytest.raises(VCDParseError, match="frac must be >= 0"):
-            vcdset.get_values("TOP.clk", {50}, value_type=FP(frac=-1, signed=False))
+            vcdset.get_values_with_t(
+                "TOP.clk", {50}, value_type=FP(frac=-1, signed=False)
+            )
 
     def test_fp_large_frac(self, vcdset):
         """Test FP() with frac larger than bit width."""
         # Clock is 1-bit, but frac=8 should still work (just very small values)
         timesteps = {50, 100, 150}
 
-        values = vcdset.get_values(
+        values = vcdset.get_values_with_t(
             "TOP.clk", timesteps, value_type=FP(frac=8, signed=False)
         )
 
@@ -740,7 +810,7 @@ class TestValueTypeFP:
         timesteps = {50, 100, 150}
 
         # Get values as fixed-point
-        values = vcdset.get_values(
+        values = vcdset.get_values_with_t(
             "TOP.clk", timesteps, value_type=FP(frac=4, signed=False)
         )
 
@@ -796,8 +866,10 @@ class TestValueTypeEdgeCases:
         """Test that Raw and String return different value types."""
         timesteps = {50}
 
-        raw_values = vcdset.get_values("TOP.clk", timesteps, value_type=Raw())
-        string_values = vcdset.get_values("TOP.clk", timesteps, value_type=String())
+        raw_values = vcdset.get_values_with_t("TOP.clk", timesteps, value_type=Raw())
+        string_values = vcdset.get_values_with_t(
+            "TOP.clk", timesteps, value_type=String()
+        )
 
         for (t1, v1), (t2, v2) in zip(raw_values, string_values):
             assert t1 == t2  # Same timestep
@@ -809,13 +881,13 @@ class TestValueTypeEdgeCases:
         """Test that different frac values give different results."""
         timesteps = {50}
 
-        fp0 = vcdset.get_values(
+        fp0 = vcdset.get_values_with_t(
             "TOP.clk", timesteps, value_type=FP(frac=0, signed=False)
         )
-        fp4 = vcdset.get_values(
+        fp4 = vcdset.get_values_with_t(
             "TOP.clk", timesteps, value_type=FP(frac=4, signed=False)
         )
-        fp8 = vcdset.get_values(
+        fp8 = vcdset.get_values_with_t(
             "TOP.clk", timesteps, value_type=FP(frac=8, signed=False)
         )
 
@@ -832,9 +904,11 @@ class TestValueTypeEdgeCases:
         """Test all ValueTypes with empty timestep set."""
         empty_set = set()
 
-        raw_values = vcdset.get_values("TOP.clk", empty_set, value_type=Raw())
-        string_values = vcdset.get_values("TOP.clk", empty_set, value_type=String())
-        fp_values = vcdset.get_values(
+        raw_values = vcdset.get_values_with_t("TOP.clk", empty_set, value_type=Raw())
+        string_values = vcdset.get_values_with_t(
+            "TOP.clk", empty_set, value_type=String()
+        )
+        fp_values = vcdset.get_values_with_t(
             "TOP.clk", empty_set, value_type=FP(frac=4, signed=False)
         )
 
@@ -851,10 +925,10 @@ class TestValueTypeEdgeCases:
 
         timesteps = {50, 100}
 
-        unsigned = vcdset.get_values(
+        unsigned = vcdset.get_values_with_t(
             "TOP.clk", timesteps, value_type=FP(frac=0, signed=False)
         )
-        signed = vcdset.get_values(
+        signed = vcdset.get_values_with_t(
             "TOP.clk", timesteps, value_type=FP(frac=0, signed=True)
         )
 

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-12-23
+### Breaking Changes
+- `get_value: Set(Timestep) -> List((Timestep, Value))` has been changed to two seperate functions
+  - `get_value: Set(Timestep) -> List(Value)`, which returns just a list of values in order of timestep.
+  - `get_value_with_t: Set(Timestep) -> List((Timestep, Value))`, which returns both (timestep, value) as previously.
+  - You typically don't care too much about the timestep, only the output values.
+
 ## [0.2.0] - 2025-12-22
 
 ### Breaking Changes

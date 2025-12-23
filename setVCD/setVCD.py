@@ -241,7 +241,7 @@ class SetVCD:
                 - Raw(): receives Optional[int] values
                 - String(): receives Optional[str] values
                 - FP(): receives Optional[float] values
-            value_type: Value conversion type (default: Raw() for backward compatibility).
+            value_type: Value conversion type (default: Raw())).
                 - Raw(): Binary to int, x/z become None
                 - String(): Keep raw strings including x/z as literals
                 - FP(frac, signed): Fixed-point to float, x/z become NaN
@@ -365,22 +365,22 @@ class SetVCD:
         List[Tuple[Time, StringValue]],
         List[Tuple[Time, FPValue]],
     ]:
-        """Get signal values at specific timesteps.
+        """Get values of a signal for specific timesteps.
 
-        This method takes a set of timesteps (typically from get()) and returns
-        the signal values at those times as a sorted list of (time, value) tuples.
+        This method takes a set of timesteps (typically from `get`) and returns
+        the signal values at those times as a sorted list values.
 
         Args:
             signal_name: Exact name of the signal to query (case-sensitive).
                 Must exist in the VCD file.
             timesteps: Set of integer timesteps to query. Can be empty.
-            value_type: Value conversion type (default: Raw() for backward compatibility).
+            value_type: Value conversion type (default: Raw()).
                 - Raw(): Binary to int, x/z become None → List[Tuple[Time, Optional[int]]]
                 - String(): Keep raw strings including x/z → List[Tuple[Time, Optional[str]]]
                 - FP(frac, signed): Fixed-point to float, x/z → NaN → List[Tuple[Time, Optional[float]]]
 
         Returns:
-            Sorted list of (time, value) tuples. Value type depends on value_type parameter.
+            Sorted list values. Value type depends on value_type parameter.
 
         Examples:
             >>> handshakes = valid_times & ready_times
@@ -393,6 +393,49 @@ class SetVCD:
             >>>
             >>> # Get as fixed-point floats
             >>> fp_values = vs.get_values("voltage", handshakes, FP(frac=12, signed=False))
+        """
+        vals_with_t = self.get_values_with_t(signal_name, timesteps, value_type)
+        # Tell pyright to ignore this because we have dependent types.
+        return [pair[1] for pair in vals_with_t]  # type: ignore[return-value]
+
+    def get_values_with_t(
+        self,
+        signal_name: str,
+        timesteps: Set[Time],
+        value_type: Optional[ValueType] = None,
+    ) -> Union[
+        List[Tuple[Time, RawValue]],
+        List[Tuple[Time, StringValue]],
+        List[Tuple[Time, FPValue]],
+    ]:
+        """Get (timesteps, values) of a signal for specific timesteps.
+
+        This method takes a set of timesteps (typically from get()) and returns
+        the signal values at those times as a sorted list of (time, value) tuples.
+
+        Args:
+            signal_name: Exact name of the signal to query (case-sensitive).
+                Must exist in the VCD file.
+            timesteps: Set of integer timesteps to query. Can be empty.
+            value_type: Value conversion type (default: Raw())).
+                - Raw(): Binary to int, x/z become None → List[Tuple[Time, Optional[int]]]
+                - String(): Keep raw strings including x/z → List[Tuple[Time, Optional[str]]]
+                - FP(frac, signed): Fixed-point to float, x/z → NaN → List[Tuple[Time, Optional[float]]]
+
+        Returns:
+            Sorted list of (time, value) tuples. Value type depends on value_type parameter.
+
+        Examples:
+            >>> handshakes = valid_times & ready_times
+            >>>
+            >>> # Get as integers (default)
+            >>> int_values = vs.get_values_with_t("counter", handshakes)
+            >>>
+            >>> # Get as strings to see x/z
+            >>> str_values = vs.get_values_with_t("data_bus", handshakes, String())
+            >>>
+            >>> # Get as fixed-point floats
+            >>> fp_values = vs.get_values_with_t("voltage", handshakes, FP(frac=12, signed=False))
         """
         # Default to Raw() if not specified
         if value_type is None:
