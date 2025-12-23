@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `get_value_with_t: Set(Timestep) -> List((Timestep, Value))`, which returns both (timestep, value) as previously.
   - You typically don't care too much about the timestep, only the output values.
 
+### Documentation
+- Add [example.ipynb](example.ipynb), a notebook to get you started with debugging your VCDs.
+
 ## [0.2.0] - 2025-12-22
 
 ### Breaking Changes

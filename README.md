@@ -24,44 +24,7 @@ As what is returned is a set, you can then use [set operations](https://en.wikip
 
 $\texttt{get-value}: (\text{String}, \text{Set(Timestep)}) \rightarrow \text{List((Timestep, Bits))}$
 
-Here's an example of finding the rising edges of the clock signal `TOP.clk` of our test wavefile `wave.vcd`:
-```python
-from setVCD import SetVCD
-
-# Load VCD file
-vcd_path = "./tests/fixtures/wave.vcd"
-sv = SetVCD(vcd_path, clock="TOP.clk")
-
-rising_edges = sv.get("TOP.clk", lambda tm1, t, tp1: tm1 == 0 and t == 1)
-print(rising_edges)
-# {34, 36, 38, 40, 42, 44, ...}
-```
-
-Because `rising_edges` is returned as a set, we can use set operations to combine it with other signals:
-```python
-# Get times when the reset signal is 0
-reset_is_0 = sv.get("TOP.reset", lambda tm1, t, tp1: t == 0)
-# Use set intersection to get valid clock updates.
-clock_update = rising_edges & reset_is_0
-```
-
-Finally, you can search the wavefile with a regex (e.g. "output"), and apply the same operations to it:
-```python
-# Find VCD signals relating to keyword "output"
-sv.search("output")
-
-# Get times when output_valid and output_ready are asserted.
-out_valid = sv.get("TOP.Accelerator.io_output_valid", lambda tm1, t, tp1: t == 1)
-out_ready = sv.get("TOP.Accelerator.io_output_ready", lambda tm1, t, tp1: t == 1)
-
-# Get timesteps of valid outputs
-valid_output_timesteps = rising_edges & reset0 & out_ready & out_valid
-
-# Get the values of the Stream `value` signal (the data) at timesteps when it is valid
-outputs = sv.get_values("TOP.Accelerator.io_output_payload_fragment_value_0[0:0]", valid_output_timesteps)
-print(outputs)
-# [(52, 0), (62, 0), (72, 1), ...]  # Integer values
-```
+You can see how this works in our [pre-filled notebook: example.ipynb](example.ipynb)
 
 ## Overview
 
