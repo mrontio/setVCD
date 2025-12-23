@@ -4,26 +4,37 @@ Programmatically inspect hardware VCD signals using a high-level functional inte
 Higher-order programming constructs and set operations are a natural fit for inspecting VCD signals, and this Python library allows you to easily specify, in text, what simulation timesteps matter to functional correctness.
 
 ## Motivating Example
-Say you are debugging a streaming interface, you often only care about the values of the data at timesteps meeting the following condition:
-
-$\text{Rising edge} \land \text{Reset is 0} \land \text{ready} \land \text{valid}$
-
+Say you are debugging a streaming input interface (`Accelerator.io_input`) and you would like to extract only the values when the streaming transaction is valid. Typically when viewing a wavefile in a viewer, the points we care about look like this:
 ![img/gtkwave.png](img/gtkwave.png "GTKWave screenshot of streaming interface we want to debug.")
 
-You can filter through an individual signal with a filter function of this signature:
+We can write this desired condition, parameterised by simulation timestep `t` as a formal statement: 
+```python
+(clk(t - 1) == 0 and clk(t) == 1) and
+reset(t) == 0 and
+input_ready(t) == 1 and
+input_valid(t) == 1
+```
+This is a very natural fit for [higher-order functions](https://en.wikipedia.org/wiki/Higher-order_function) and [set operations](https://en.wikipedia.org/wiki/Set_(mathematics)#Basic_operations).
 
-$(\text{Bits}, \text{Bits}, \text{Bits}) \rightarrow \text{Bool}$
-
-with the left-hand tuple representing *values* at timestep $t$: $(t-1, t, t+1)$.
-
-We then define our `get` method, which takes the name of the signal (as a String), a function with the above signature, and returns a set of *timesteps*:
-
-$\texttt{get}: (\text{String}, ((\text{Bits}, \text{Bits}, \text{Bits}) \rightarrow \text{Bool})) \rightarrow \text{Set(Timestep)}$
-
-As what is returned is a set, you can then use [set operations](https://en.wikipedia.org/wiki/Set_(mathematics)#Basic_operations) to manipulate them as needed, and finally extract the values from your desired signal using our `get_value` function:
-
-$\texttt{get-value}: (\text{String}, \text{Set(Timestep)}) \rightarrow \text{List((Timestep, Bits))}$
-
+This library provides you two important methods: 
+- Get set of timesteps with condition:
+   ```python
+    SetVCD.get : (signal: String,
+                  condition: (Value, Value, Value) -> Bool,
+                  value_type: Raw or String or FP)
+                  -> Set(Timestep)
+   ```
+   - Given a signal in the VCD file with name `signal`, return a set of timesteps where condition is True.
+   - `condition` is a function that should take three values relating to the current timestep: $(t-1, t, t+1)$, which allows to detect things like rising edges. The `Value` depends on the
+   - `value_type` reflects how the signal values are interpretted.
+      - `setVCD.Raw()` outputs (`int`),
+      - `setVCD.String()` outputs `str`),
+      - `setVCD.FP(fractional_bits: int, signed: bool)` outputs `float`, which is converted using fixed point.
+- Get the values at a set of timesteps:
+  ```python
+  SetVCD.get_value : (timesteps: Set(Timestep), ValueType: Raw or String or FP) -> List(Value)
+  SetVCD.get_value_with_t : (timesteps: Set(Timestep), ValueType: Raw or String or FP) -> List((Timestep, Value))
+  ```
 You can see how this works in our [pre-filled notebook: example.ipynb](example.ipynb)
 
 ## Overview
