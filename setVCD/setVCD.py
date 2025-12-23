@@ -2,7 +2,7 @@
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import vcdvcd
 
@@ -15,28 +15,37 @@ from .exceptions import (
     VCDFileNotFoundError,
     VCDParseError,
 )
-from .types import SignalCondition, SignalProtocol, Time, VCDInput, VCDVCDProtocol
+from .types import (
+    FP,
+    AnyValue,
+    FPValue,
+    Raw,
+    RawValue,
+    SignalConditionProtocol,
+    SignalProtocol,
+    String,
+    StringValue,
+    Time,
+    ValueType,
+    VCDInput,
+    VCDVCDProtocol,
+)
 
 
-def _value_to_int(value: str) -> Optional[int]:
-    """Convert VCD string value to Optional[int].
-
-    Converts binary string to decimal integer. Returns None if value
-    contains 'x' or 'z' (unknown/high-impedance).
+def _convert_to_int(value: str) -> Optional[int]:
+    """Convert vcdvcd binary string to integer (Raw conversion).
 
     Args:
-        value: VCD signal value string (e.g., "0", "1", "1010", "x", "01xz")
+        value: Binary string from vcdvcd (e.g., "1010", "xxxx", "z")
 
     Returns:
-        Integer if all bits are 0/1, None if any x/z present
+        Integer value for valid binary strings, None for x/z or malformed strings.
 
     Examples:
-        "0" -> 0
-        "1" -> 1
-        "1010" -> 10
-        "x" -> None
-        "z" -> None
-        "01xz" -> None
+        >>> _convert_to_int("1010")  # Binary to decimal
+        10
+        >>> _convert_to_int("xxxx")  # X/Z values
+        None
     """
     # Case-insensitive check for unknown/high-impedance
     value_lower = value.lower()
@@ -49,6 +58,60 @@ def _value_to_int(value: str) -> Optional[int]:
     except ValueError:
         # Defensive: malformed VCD value
         return None
+
+
+def _convert_to_string(value: str) -> Optional[str]:
+    """Convert vcdvcd string to string (String conversion - passthrough)."""
+    # Return as-is, only return None for truly invalid input
+    if value is None or value == "":
+        return None
+    return value
+
+
+def _convert_to_fp(value: str, frac: int, signed: bool) -> Optional[float]:
+    """Convert vcdvcd binary string to fixed-point float (FP conversion)."""
+    # Validate frac parameter
+    if frac < 0:
+        raise ValueError(f"frac must be >= 0, got {frac}")
+
+    # Check for x/z - return NaN per requirements
+    value_lower = value.lower()
+    if "x" in value_lower or "z" in value_lower:
+        return float("nan")
+
+    try:
+        # Convert binary string to integer (unsigned initially)
+        int_value = int(value, 2)
+        total_bits = len(value)
+
+        # Handle signed values (two's complement)
+        if signed and total_bits > 0:
+            sign_bit = 1 << (total_bits - 1)
+            if int_value & sign_bit:
+                # Negative number in two's complement
+                int_value = int_value - (1 << total_bits)
+
+        # Apply fractional scaling: divide by 2^frac
+        float_value = int_value / (1 << frac)
+
+        return float_value
+
+    except ValueError:
+        # Malformed binary string
+        return float("nan")
+
+
+def _convert_value(value_str: str, value_type: ValueType) -> AnyValue:
+    """Dispatch to appropriate converter based on ValueType."""
+    if isinstance(value_type, Raw):
+        return _convert_to_int(value_str)
+    elif isinstance(value_type, String):
+        return _convert_to_string(value_str)
+    elif isinstance(value_type, FP):
+        return _convert_to_fp(value_str, value_type.frac, value_type.signed)
+    else:
+        # Should never happen with proper typing
+        raise ValueError(f"Unknown ValueType: {type(value_type)}")
 
 
 class SetVCD:
@@ -159,10 +222,50 @@ class SetVCD:
         searched = [s for s in signals if re.search(search_regex, s)]
         return searched
 
-    def get(self, signal_name: str, signal_condition: SignalCondition) -> Set[Time]:
+    def get(
+        self,
+        signal_name: str,
+        signal_condition: Union[
+            SignalConditionProtocol[int],
+            SignalConditionProtocol[str],
+            SignalConditionProtocol[float],
+        ],
+        value_type: Optional[ValueType] = None,
+    ) -> Set[Time]:
+        """Filter time points based on signal condition.
+
+        Args:
+            signal_name: Exact name of signal (case-sensitive). Must exist in VCD file.
+            signal_condition: Function (sm1, s, sp1) -> bool that evaluates signal values.
+                The value types passed depend on value_type parameter:
+                - Raw(): receives Optional[int] values
+                - String(): receives Optional[str] values
+                - FP(): receives Optional[float] values
+            value_type: Value conversion type (default: Raw() for backward compatibility).
+                - Raw(): Binary to int, x/z become None
+                - String(): Keep raw strings including x/z as literals
+                - FP(frac, signed): Fixed-point to float, x/z become NaN
+
+        Returns:
+            Set of timesteps where signal_condition returns True.
+
+        Examples:
+            >>> # Integer comparison (default Raw)
+            >>> rising = vs.get("clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+            >>>
+            >>> # String matching to detect x/z
+            >>> has_x = vs.get("data", lambda sm1, s, sp1: s is not None and 'x' in s,
+            ...                value_type=String())
+            >>>
+            >>> # Fixed-point comparison
+            >>> above_threshold = vs.get("temp",
+            ...                          lambda sm1, s, sp1: s is not None and s > 25.5,
+            ...                          value_type=FP(frac=8, signed=True))
         """
-        Filter time points
-        """
+        # Default to Raw() if not specified
+        if value_type is None:
+            value_type = Raw()
+
         # Validate signal exists
         try:
             all_signals = self.wave.get_signals()
@@ -218,18 +321,19 @@ class SetVCD:
                     signal_obj[time + 1] if time < self.last_clock else None
                 )
 
-                # Convert to integers (None for boundaries or x/z)
-                sm1: Optional[int] = (
-                    _value_to_int(sm1_str) if sm1_str is not None else None
+                # Convert values using specified ValueType (None for boundaries)
+                sm1: AnyValue = (
+                    _convert_value(sm1_str, value_type) if sm1_str is not None else None
                 )
-                s: Optional[int] = _value_to_int(s_str)
-                sp1: Optional[int] = (
-                    _value_to_int(sp1_str) if sp1_str is not None else None
+                s: AnyValue = _convert_value(s_str, value_type)
+                sp1: AnyValue = (
+                    _convert_value(sp1_str, value_type) if sp1_str is not None else None
                 )
 
                 # Evaluate user's condition
                 try:
-                    check = signal_condition(sm1, s, sp1)
+                    # Tell pyright to ignore this because we have dependent types.
+                    check = signal_condition(sm1, s, sp1)  # type: ignore[arg-type]
                 except Exception as e:
                     raise InvalidSignalConditionError(
                         f"signal_condition raised exception at time {time}: {e}. "
@@ -252,8 +356,15 @@ class SetVCD:
         return out
 
     def get_values(
-        self, signal_name: str, timesteps: Set[Time]
-    ) -> List[Tuple[Time, Optional[int]]]:
+        self,
+        signal_name: str,
+        timesteps: Set[Time],
+        value_type: Optional[ValueType] = None,
+    ) -> Union[
+        List[Tuple[Time, RawValue]],
+        List[Tuple[Time, StringValue]],
+        List[Tuple[Time, FPValue]],
+    ]:
         """Get signal values at specific timesteps.
 
         This method takes a set of timesteps (typically from get()) and returns
@@ -263,12 +374,30 @@ class SetVCD:
             signal_name: Exact name of the signal to query (case-sensitive).
                 Must exist in the VCD file.
             timesteps: Set of integer timesteps to query. Can be empty.
+            value_type: Value conversion type (default: Raw() for backward compatibility).
+                - Raw(): Binary to int, x/z become None → List[Tuple[Time, Optional[int]]]
+                - String(): Keep raw strings including x/z → List[Tuple[Time, Optional[str]]]
+                - FP(frac, signed): Fixed-point to float, x/z → NaN → List[Tuple[Time, Optional[float]]]
 
         Returns:
-            List of (time, value) tuples sorted by time. Values are Optional[int]:
-            integers for valid binary values (decimal conversion), None for x/z.
+            Sorted list of (time, value) tuples. Value type depends on value_type parameter.
 
+        Examples:
+            >>> handshakes = valid_times & ready_times
+            >>>
+            >>> # Get as integers (default)
+            >>> int_values = vs.get_values("counter", handshakes)
+            >>>
+            >>> # Get as strings to see x/z
+            >>> str_values = vs.get_values("data_bus", handshakes, String())
+            >>>
+            >>> # Get as fixed-point floats
+            >>> fp_values = vs.get_values("voltage", handshakes, FP(frac=12, signed=False))
         """
+        # Default to Raw() if not specified
+        if value_type is None:
+            value_type = Raw()
+
         # Validate signal exists
         try:
             all_signals = self.wave.get_signals()
@@ -306,12 +435,12 @@ class SetVCD:
             raise VCDParseError(f"Failed to access signal '{signal_name}': {e}") from e
 
         # Get values at each timestep and sort by time
-        result: List[Tuple[Time, Optional[int]]] = []
+        result: List[Tuple[Time, AnyValue]] = []
         for time in timesteps:
             try:
                 value_str: str = signal_obj[time]
-                value_int: Optional[int] = _value_to_int(value_str)
-                result.append((time, value_int))
+                value_converted: AnyValue = _convert_value(value_str, value_type)
+                result.append((time, value_converted))
             except Exception as e:
                 raise VCDParseError(
                     f"Failed to access signal '{signal_name}' at time {time}: {e}"
@@ -320,4 +449,5 @@ class SetVCD:
         # Sort by time
         result.sort(key=lambda x: x[0])
 
-        return result
+        # Tell pyright to ignore this because we have dependent types.
+        return result  # type: ignore[return-value]

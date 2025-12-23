@@ -12,7 +12,17 @@ from .exceptions import (
     VCDSetError,
 )
 from .setVCD import SetVCD
-from .types import SignalCondition, Time, TimeValue, Value, VCDInput
+from .types import (
+    FP,
+    Raw,
+    SignalCondition,
+    String,
+    Time,
+    TimeValue,
+    Value,
+    ValueType,
+    VCDInput,
+)
 
 __version__ = "0.2.0"
 __all__ = [
@@ -33,4 +43,9 @@ __all__ = [
     "TimeValue",
     "SignalCondition",
     "VCDInput",
+    # ValueTypes
+    "ValueType",
+    "Raw",
+    "String",
+    "FP",
 ]

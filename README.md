@@ -14,7 +14,7 @@ You can filter through an individual signal with a filter function of this signa
 
 $(\text{Bits}, \text{Bits}, \text{Bits}) \rightarrow \text{Bool}$
 
-with the left-hand tuple representing *values* at timestep $t$: $(t-1, t, t+1)$. 
+with the left-hand tuple representing *values* at timestep $t$: $(t-1, t, t+1)$.
 
 We then define our `get` method, which takes the name of the signal (as a String), a function with the above signature, and returns a set of *timesteps*:
 
@@ -190,11 +190,116 @@ state_b = sv.get("state[1:0]", lambda sm1, s, sp1: s == 1)
 # Times when transitioning from state A to state B
 transition = sv.get("state[1:0]", lambda sm1, s, sp1: sm1 == 0 and s == 1)
 ```
+
+## Value Types
+
+SetVCD supports three ValueType options to control how signal values are converted before being passed to your condition lambdas:
+
+### Raw() - Integer Conversion (Default)
+
+Converts binary strings to decimal integers. X/Z values become `None`. This is the default behavior.
+
+```python
+from setVCD import SetVCD, Raw
+
+sv = SetVCD("simulation.vcd", clock="clk")
+
+# Default behavior (Raw is implicit)
+rising = sv.get("data[7:0]", lambda sm1, s, sp1: sm1 is not None and sm1 < s)
+
+# Explicit Raw (same as above)
+rising = sv.get("data[7:0]", lambda sm1, s, sp1: sm1 is not None and sm1 < s, value_type=Raw())
+
+# Multi-bit signals converted to decimal
+# Binary "00001010" → integer 10
+high_values = sv.get("bus[7:0]", lambda sm1, s, sp1: s is not None and s > 128)
+```
+
+### String() - Preserve Raw Strings
+
+Keeps vcdvcd's raw string representation, including X/Z values as literal strings. Useful for detecting unknown states.
+
+```python
+from setVCD import SetVCD, String
+
+sv = SetVCD("simulation.vcd", clock="clk")
+
+# Detect X/Z values in data bus
+has_x = sv.get("data[7:0]",
+               lambda sm1, s, sp1: s is not None and 'x' in s.lower(),
+               value_type=String())
+
+# String pattern matching
+all_ones = sv.get("bus[3:0]",
+                  lambda sm1, s, sp1: s == "1111",
+                  value_type=String())
+
+# Get string values
+values = sv.get_values("data", timesteps, value_type=String())
+# Returns: [(50, "1010"), (60, "1111"), (70, "xxxx"), ...]
+```
+
+**X/Z Handling:** X and Z values are preserved as strings (`"x"`, `"z"`, `"xxxx"`, etc.)
+
+### FP() - Fixed-Point to Float
+
+Converts binary strings to floating-point by interpreting them as fixed-point numbers with configurable fractional bits and optional sign bit.
+
+```python
+from setVCD import SetVCD, FP
+
+sv = SetVCD("simulation.vcd", clock="clk")
+
+# Temperature sensor with 8 fractional bits (Q8.8 format)
+# Binary "0001100100000000" → 25.0 degrees
+above_threshold = sv.get("temp_sensor[15:0]",
+                        lambda sm1, s, sp1: s is not None and s > 25.5,
+                        value_type=FP(frac=8, signed=False))
+
+# Signed fixed-point (Q3.4 format - 1 sign bit, 3 integer bits, 4 fractional bits)
+# Binary "11111110" → -0.125 (two's complement)
+negative_values = sv.get("signed_value[7:0]",
+                        lambda sm1, s, sp1: s is not None and s < 0,
+                        value_type=FP(frac=4, signed=True))
+
+# Get fixed-point values
+voltages = sv.get_values("adc_reading[11:0]", timesteps,
+                        value_type=FP(frac=12, signed=False))
+# Returns: [(50, 1.2), (60, 2.5), (70, 3.8), ...]
+```
+
+**X/Z Handling:** X and Z values become `float('nan')`. Use `math.isnan()` to detect them:
+
+```python
+import math
+
+# Filter out NaN values
+valid_readings = sv.get("sensor",
+                       lambda sm1, s, sp1: s is not None and not math.isnan(s),
+                       value_type=FP(frac=8, signed=False))
+```
+
+**Fixed-Point Formula:**
+- Unsigned: `value = int_value / (2^frac)`
+- Signed: Two's complement, then divide by `2^frac`
+
+**Examples:**
+- `"00001010"` with `frac=4, signed=False` → `10 / 16 = 0.625`
+- `"11111110"` with `frac=4, signed=True` → `-2 / 16 = -0.125`
+- `"00010000"` with `frac=0, signed=False` → `16 / 1 = 16.0` (integer)
+
+### Hardware Use Cases
+
+**Raw (Default):** Most general-purpose verification - state machines, counters, addresses, data comparisons
+
+**String:** Debugging X/Z propagation, detecting uninitialized signals, bit-pattern analysis
+
+**FP:** Analog interfaces (ADC/DAC), sensor data, fixed-point DSP verification, power/temperature monitors
+
 ## Future Enhancements
 
 Planned for future versions:
 
-- Fixed-point to Python float translation for multi-bit signals
 - Higher-order operations for signal conditions
 - Performance optimization for large VCD files
 - Streaming interface for very large files

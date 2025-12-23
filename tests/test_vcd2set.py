@@ -5,11 +5,14 @@ from pathlib import Path
 import pytest
 
 from setVCD import (
+    FP,
     ClockSignalError,
     InvalidInputError,
     InvalidSignalConditionError,
+    Raw,
     SetVCD,
     SignalNotFoundError,
+    String,
     VCDFileNotFoundError,
 )
 
@@ -559,3 +562,304 @@ class TestSetVCDGetValues:
 
         assert timesteps == original_timesteps  # Set unchanged
         assert len(values) == len(timesteps)
+
+
+# Test ValueType - Raw (default, backward compatibility)
+class TestValueTypeRaw:
+    """Tests for Raw() ValueType (default behavior)."""
+
+    def test_raw_is_default(self, vcdset):
+        """Test that Raw() is the default value_type."""
+        # Without value_type parameter, should work as Raw()
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+
+        # With explicit Raw()
+        rising_explicit = vcdset.get(
+            "TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1, value_type=Raw()
+        )
+
+        assert rising == rising_explicit
+
+    def test_raw_binary_to_int(self, vcdset):
+        """Test Raw() converts binary strings to integers."""
+        # Get all timesteps
+        all_times = vcdset.get("TOP.clk", lambda sm1, s, sp1: True, value_type=Raw())
+
+        # Values should be integers 0 or 1 for clock signal
+        values = vcdset.get_values("TOP.clk", all_times, value_type=Raw())
+
+        for _, value in values:
+            assert isinstance(value, int)
+            assert value in [0, 1]
+
+    def test_raw_multibit_conversion(self, vcdset):
+        """Test Raw() converts multi-bit signals to decimal integers."""
+        # Get a timestep where we have data
+        timesteps = {50, 100, 150}
+
+        values = vcdset.get_values(
+            "TOP.io_input_payload_fragment_value_0[15:0]", timesteps, value_type=Raw()
+        )
+
+        # Values should be integers
+        for _, value in values:
+            assert value is None or isinstance(value, int)
+
+    def test_backward_compatibility_no_value_type(self, vcdset):
+        """Test that existing code without value_type still works."""
+        # This should work exactly as before
+        rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+
+        assert isinstance(rising, set)
+        assert len(rising) > 0
+        assert all(isinstance(t, int) for t in rising)
+
+
+# Test ValueType - String
+class TestValueTypeString:
+    """Tests for String() ValueType."""
+
+    def test_string_preserves_binary(self, vcdset):
+        """Test String() preserves binary string representation."""
+        # Get some timesteps
+        timesteps = {50, 100, 150}
+
+        values = vcdset.get_values("TOP.clk", timesteps, value_type=String())
+
+        # Values should be strings "0" or "1"
+        for _, value in values:
+            assert isinstance(value, str)
+            assert value in ["0", "1"]
+
+    def test_string_pattern_matching(self, vcdset):
+        """Test string pattern matching in conditions."""
+        # Find timesteps where clock is "1" (as string)
+        high_times = vcdset.get(
+            "TOP.clk", lambda sm1, s, sp1: s == "1", value_type=String()
+        )
+
+        assert isinstance(high_times, set)
+        assert len(high_times) > 0
+
+    def test_string_multibit_values(self, vcdset):
+        """Test String() with multi-bit signals."""
+        timesteps = {50, 100, 150}
+
+        values = vcdset.get_values(
+            "TOP.io_input_payload_fragment_value_0[15:0]",
+            timesteps,
+            value_type=String(),
+        )
+
+        # Values should be binary strings
+        for _, value in values:
+            assert value is None or isinstance(value, str)
+            # If not None, should be a binary string (only 0s and 1s)
+            if value is not None:
+                assert all(c in "01xzXZ" for c in value)
+
+    def test_string_comparison_in_lambda(self, vcdset):
+        """Test comparing string values in lambda."""
+        # Get timesteps where clock transitions from "0" to "1"
+        rising = vcdset.get(
+            "TOP.clk", lambda sm1, s, sp1: sm1 == "0" and s == "1", value_type=String()
+        )
+
+        assert isinstance(rising, set)
+        assert len(rising) > 0
+
+
+# Test ValueType - FP (Fixed-Point)
+class TestValueTypeFP:
+    """Tests for FP() ValueType."""
+
+    def test_fp_basic_unsigned(self, vcdset):
+        """Test FP() basic conversion with unsigned values."""
+        # Use clock signal: "0" -> 0.0, "1" -> 0.0625 with frac=4
+        timesteps = {50, 100, 150}
+
+        values = vcdset.get_values(
+            "TOP.clk", timesteps, value_type=FP(frac=4, signed=False)
+        )
+
+        # Values should be floats
+        for _, value in values:
+            assert isinstance(value, float)
+            # Clock is 0 or 1, so with frac=4: 0/16=0.0 or 1/16=0.0625
+            assert value in [0.0, 0.0625]
+
+    def test_fp_frac_zero(self, vcdset):
+        """Test FP() with frac=0 (whole numbers)."""
+        timesteps = {50, 100, 150}
+
+        values = vcdset.get_values(
+            "TOP.clk", timesteps, value_type=FP(frac=0, signed=False)
+        )
+
+        # With frac=0, values should be whole numbers
+        for _, value in values:
+            assert isinstance(value, float)
+            assert value in [0.0, 1.0]
+
+    def test_fp_comparison_in_lambda(self, vcdset):
+        """Test floating-point comparison in lambda."""
+        # Find times when clock > 0.5 (which means value is 1 with frac=0)
+        high = vcdset.get(
+            "TOP.clk",
+            lambda sm1, s, sp1: s is not None and s > 0.5,
+            value_type=FP(frac=0, signed=False),
+        )
+
+        assert isinstance(high, set)
+        assert len(high) > 0
+
+    def test_fp_negative_frac_raises_error(self, vcdset):
+        """Test that FP() with negative frac raises error."""
+        # Import the exception we need
+        from setVCD import VCDParseError
+
+        with pytest.raises(VCDParseError, match="frac must be >= 0"):
+            vcdset.get_values("TOP.clk", {50}, value_type=FP(frac=-1, signed=False))
+
+    def test_fp_large_frac(self, vcdset):
+        """Test FP() with frac larger than bit width."""
+        # Clock is 1-bit, but frac=8 should still work (just very small values)
+        timesteps = {50, 100, 150}
+
+        values = vcdset.get_values(
+            "TOP.clk", timesteps, value_type=FP(frac=8, signed=False)
+        )
+
+        # Values should be very small: 0/256=0.0 or 1/256≈0.0039
+        for _, value in values:
+            assert isinstance(value, float)
+            assert value < 0.01  # Very small values
+
+    def test_fp_arithmetic_operations(self, vcdset):
+        """Test arithmetic operations with FP values."""
+        timesteps = {50, 100, 150}
+
+        # Get values as fixed-point
+        values = vcdset.get_values(
+            "TOP.clk", timesteps, value_type=FP(frac=4, signed=False)
+        )
+
+        # Perform arithmetic
+        for _, value in values:
+            doubled = value * 2
+            assert isinstance(doubled, float)
+
+
+# Test ValueType - Edge Cases
+class TestValueTypeEdgeCases:
+    """Edge cases and boundary conditions for ValueTypes."""
+
+    def test_boundary_values_remain_none(self, vcdset):
+        """Test that boundary None values are preserved across all ValueTypes."""
+        # At time 0, sm1 should be None regardless of ValueType
+        time_zero_found = False
+
+        def check_time_zero(sm1, s, sp1):
+            nonlocal time_zero_found
+            if sm1 is None and s is not None:
+                time_zero_found = True
+            return True
+
+        # Test with Raw
+        vcdset.get("TOP.clk", check_time_zero, value_type=Raw())
+        assert time_zero_found
+
+        # Test with String
+        time_zero_found = False
+        vcdset.get("TOP.clk", check_time_zero, value_type=String())
+        assert time_zero_found
+
+        # Test with FP
+        time_zero_found = False
+        vcdset.get("TOP.clk", check_time_zero, value_type=FP(frac=4, signed=False))
+        assert time_zero_found
+
+    def test_last_time_sp1_none(self, vcdset):
+        """Test that at last_clock, sp1 is None regardless of ValueType."""
+        last_time_found = False
+
+        def check_last_time(sm1, s, sp1):
+            nonlocal last_time_found
+            if sp1 is None and s is not None and sm1 is not None:
+                last_time_found = True
+            return True
+
+        vcdset.get("TOP.clk", check_last_time, value_type=Raw())
+        assert last_time_found
+
+    def test_raw_to_string_different_results(self, vcdset):
+        """Test that Raw and String return different value types."""
+        timesteps = {50}
+
+        raw_values = vcdset.get_values("TOP.clk", timesteps, value_type=Raw())
+        string_values = vcdset.get_values("TOP.clk", timesteps, value_type=String())
+
+        for (t1, v1), (t2, v2) in zip(raw_values, string_values):
+            assert t1 == t2  # Same timestep
+            assert type(v1) is not type(v2)  # Different types
+            assert isinstance(v1, int)
+            assert isinstance(v2, str)
+
+    def test_fp_different_frac_different_values(self, vcdset):
+        """Test that different frac values give different results."""
+        timesteps = {50}
+
+        fp0 = vcdset.get_values(
+            "TOP.clk", timesteps, value_type=FP(frac=0, signed=False)
+        )
+        fp4 = vcdset.get_values(
+            "TOP.clk", timesteps, value_type=FP(frac=4, signed=False)
+        )
+        fp8 = vcdset.get_values(
+            "TOP.clk", timesteps, value_type=FP(frac=8, signed=False)
+        )
+
+        # Get the values (assuming clock is 1 at time 50)
+        for (_t0, v0), (_t4, v4), (_t8, v8) in zip(fp0, fp4, fp8):
+            if v0 == 1.0:  # If clock is high
+                # 1/1 = 1.0, 1/16 = 0.0625, 1/256 ≈ 0.0039
+                assert v0 > v4 > v8
+                assert abs(v0 - 1.0) < 0.001
+                assert abs(v4 - 0.0625) < 0.001
+                assert abs(v8 - 0.00390625) < 0.0001
+
+    def test_value_type_with_empty_timesteps(self, vcdset):
+        """Test all ValueTypes with empty timestep set."""
+        empty_set = set()
+
+        raw_values = vcdset.get_values("TOP.clk", empty_set, value_type=Raw())
+        string_values = vcdset.get_values("TOP.clk", empty_set, value_type=String())
+        fp_values = vcdset.get_values(
+            "TOP.clk", empty_set, value_type=FP(frac=4, signed=False)
+        )
+
+        assert raw_values == []
+        assert string_values == []
+        assert fp_values == []
+
+    def test_fp_signed_vs_unsigned(self, vcdset):
+        """Test difference between signed and unsigned FP conversion."""
+        # For signals where MSB might be 1, signed vs unsigned matters
+        # With clock (single bit), value "1" interpreted differently
+        # Unsigned: 1 = 1
+        # Signed (1-bit): 1 = -1 in two's complement
+
+        timesteps = {50, 100}
+
+        unsigned = vcdset.get_values(
+            "TOP.clk", timesteps, value_type=FP(frac=0, signed=False)
+        )
+        signed = vcdset.get_values(
+            "TOP.clk", timesteps, value_type=FP(frac=0, signed=True)
+        )
+
+        # Check for a high clock value
+        for (_t_u, v_u), (_t_s, v_s) in zip(unsigned, signed):
+            if v_u == 1.0:  # Unsigned interpretation
+                # Signed 1-bit "1" should be -1.0
+                assert v_s == -1.0
