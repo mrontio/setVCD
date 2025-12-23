@@ -30,6 +30,7 @@ This library provides you two important methods:
       - `setVCD.Raw()` outputs (`int`),
       - `setVCD.String()` outputs `str`),
       - `setVCD.FP(fractional_bits: int, signed: bool)` outputs `float`, which is converted using fixed point.
+   - Return type `Set(Timestep)` allows it to be seamlessly combined with other signals using [set operations](https://en.wikipedia.org/wiki/Set_(mathematics)#Basic_operations).
 - Get the values at a set of timesteps:
   ```python
   SetVCD.get_value : (timesteps: Set(Timestep), ValueType: Raw or String or FP) -> List(Value)
