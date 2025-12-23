@@ -42,11 +42,10 @@ dev = [
     "isort>=5.0",
 ]
 
-# TODO
-# [project.urls]
-# Homepage = "https://github.com/mrontio/setVCD"
-# Repository = "https://github.com/mrontio/setVCD"
-# Issues = "https://github.com/mrontio/setVCD/issues"
+[project.urls]
+Homepage = "https://github.com/mrontio/setVCD"
+Repository = "https://github.com/mrontio/setVCD"
+Issues = "https://github.com/mrontio/setVCD/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

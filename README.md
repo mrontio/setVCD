@@ -68,13 +68,9 @@ print(outputs)
 SetVCD is a Python package for analyzing Verilog VCD files and extracting time points where specific signal conditions are met. It provides a simple, type-safe interface for working with simulation waveforms using set-based operations.
 
 ## Installation
-Whilst we are in pre-release, please install the package in a local venv:
+The package is available in PyPI:
 ```bash
-python -m venv ./vcd-venv
-source vcd-venv/bin/activate
-git clone https://github.com/mrontio/setVCD.git
-cd setVCD
-pip install .
+pip install setVCD
 ```
 
 
