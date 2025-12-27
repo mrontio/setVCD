@@ -7,7 +7,7 @@ Higher-order programming constructs and set operations are a natural fit for ins
 Say you are debugging a streaming input interface (`Accelerator.io_input`) and you would like to extract only the values when the streaming transaction is valid. Typically when viewing a wavefile in a viewer, the points we care about look like this:
 ![img/gtkwave.png](img/gtkwave.png "GTKWave screenshot of streaming interface we want to debug.")
 
-We can write this desired condition, parameterised by simulation timestep `t` as a formal statement: 
+We can write this desired condition, parameterised by simulation timestep `t` as a formal statement:
 ```python
 (clk(t - 1) == 0 and clk(t) == 1) and
 reset(t) == 0 and
@@ -16,7 +16,7 @@ input_valid(t) == 1
 ```
 This is a very natural fit for [higher-order functions](https://en.wikipedia.org/wiki/Higher-order_function) and [set operations](https://en.wikipedia.org/wiki/Set_(mathematics)#Basic_operations).
 
-This library provides you two important methods: 
+This library provides you two important methods:
 - Get set of timesteps with condition:
    ```python
     SetVCD.get : (signal: String,
@@ -266,6 +266,129 @@ valid_readings = sv.get("sensor",
 **String:** Debugging X/Z propagation, detecting uninitialized signals, bit-pattern analysis
 
 **FP:** Analog interfaces (ADC/DAC), sensor data, fixed-point DSP verification, power/temperature monitors
+
+## X/Z and None Handling
+
+SetVCD provides fine-grained control over how x/z (unknown/high-impedance) values and None values are handled during signal filtering.
+
+### X/Z Handling Methods
+
+Control how x/z values in VCD signals are processed using the `xz_method` parameter:
+
+#### XZIgnore() - Skip X/Z Timesteps (Default)
+
+Skips any timestep where any signal value (sm1, s, or sp1) contains x or z. This is the most efficient option.
+
+```python
+from setVCD import SetVCD, XZIgnore
+
+# Default behavior - skip all x/z timesteps
+sv = SetVCD("sim.vcd", clock="clk")  # xz_method=XZIgnore() by default
+valid = sv.get("data", lambda sm1, s, sp1: s == 5)
+# Timesteps with x/z are automatically excluded
+```
+
+#### XZNone() - Convert X/Z to None
+
+Converts x/z values to None (for Raw/FP) or preserves them as strings (for String), then passes to the filter function.
+
+```python
+from setVCD import SetVCD, XZNone, Raw
+
+sv = SetVCD("sim.vcd", clock="clk", xz_method=XZNone(), none_ignore=False)
+
+# Filter can explicitly handle x/z values (converted to None)
+valid_or_unknown = sv.get("data",
+                          lambda sm1, s, sp1: s is None or s == 5,
+                          value_type=Raw())
+```
+
+#### XZValue(replacement) - Replace X/Z with Value
+
+Replaces x/z values with a specific integer value before conversion. For String type, x/z is preserved (replacement ignored).
+
+```python
+from setVCD import SetVCD, XZValue, Raw
+
+# Replace x/z with 0 for comparison
+sv = SetVCD("sim.vcd", clock="clk", xz_method=XZValue(replacement=0))
+result = sv.get("data", lambda sm1, s, sp1: s == 0, value_type=Raw())
+# x/z values are treated as 0
+```
+
+### None Handling
+
+Control whether None values (from boundaries or x/z) are passed to filter functions using `none_ignore`:
+
+#### none_ignore=True (Default)
+
+Skips timesteps where any value (sm1, s, sp1) is None. This includes:
+- Boundary conditions: sm1 at t=0, sp1 at last_clock
+- X/Z values when using XZNone()
+
+```python
+from setVCD import SetVCD
+
+sv = SetVCD("sim.vcd", clock="clk")  # none_ignore=True by default
+
+# Boundary timesteps (t=0, last_clock) are skipped
+result = sv.get("data", lambda sm1, s, sp1: s == 5)
+# Result will not include t=0 or last_clock
+```
+
+#### none_ignore=False - Pass None to Filter
+
+Allows filter functions to receive and handle None values explicitly.
+
+```python
+from setVCD import SetVCD, XZNone
+
+sv = SetVCD("sim.vcd", clock="clk", xz_method=XZNone(), none_ignore=False)
+
+# Filter receives None at boundaries
+boundary_times = sv.get("data", lambda sm1, s, sp1: sm1 is None or sp1 is None)
+# Result includes t=0 (sm1=None) and last_clock (sp1=None)
+```
+
+### Interaction Matrix
+
+| xz_method    | none_ignore | Behavior at X/Z     | Behavior at Boundaries   |
+|--------------|-------------|---------------------|-------------------------|
+| XZIgnore()   | True        | Skipped (x/z check) | Skipped (None check)    |
+| XZIgnore()   | False       | Skipped (x/z check) | Passed to filter        |
+| XZNone()     | True        | Skipped (None check)| Skipped (None check)    |
+| XZNone()     | False       | Passed as None      | Passed as None          |
+| XZValue(n)   | True        | Replaced with n     | Skipped (None check)    |
+| XZValue(n)   | False       | Replaced with n     | Passed as None          |
+
+**Note:** XZNone() + none_ignore=True is functionally equivalent to XZIgnore()
+
+### Migration from v0.3.x
+
+Version 0.4.0 introduces **breaking changes** to x/z and None handling defaults:
+
+**Old behavior (v0.3.x and earlier):**
+- X/Z values converted to None and passed to filters
+- None values (boundaries) passed to filters
+- Filter functions needed to handle None explicitly
+
+**New behavior (v0.4.0+):**
+- X/Z timesteps skipped by default (`xz_method=XZIgnore()`)
+- None values skipped by default (`none_ignore=True`)
+- Filter functions receive cleaner, non-None values
+
+**To restore old behavior:**
+```python
+from setVCD import SetVCD, XZNone
+
+# v0.4.0+ with old behavior
+sv = SetVCD("sim.vcd", clock="clk", xz_method=XZNone(), none_ignore=False)
+```
+
+**Recommended migration:**
+- Review filter functions that check for None values
+- Consider using new defaults for cleaner logic
+- Add explicit `xz_method=XZNone(), none_ignore=False` if old behavior needed
 
 ## Future Enhancements
 

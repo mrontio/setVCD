@@ -29,6 +29,9 @@ from .types import (
     ValueType,
     VCDInput,
     VCDVCDProtocol,
+    XZIgnore,
+    XZMethod,
+    XZValue,
 )
 
 
@@ -114,12 +117,41 @@ def _convert_value(value_str: str, value_type: ValueType) -> AnyValue:
         raise ValueError(f"Unknown ValueType: {type(value_type)}")
 
 
+def _has_xz(value_str: Optional[str]) -> bool:
+    """Check if raw vcdvcd string contains x or z."""
+    if value_str is None:
+        return False
+    return "x" in value_str.lower() or "z" in value_str.lower()
+
+
+def _replace_xz(value_str: str, replacement: int) -> str:
+    """Replace x/z in binary string with binary representation of replacement."""
+    if not _has_xz(value_str):
+        return value_str
+
+    # Convert replacement to binary with same width
+    width = len(value_str)
+    binary = format(replacement, f"0{width}b")
+
+    # Truncate if replacement is too large
+    if len(binary) > width:
+        binary = binary[-width:]
+
+    return binary
+
+
 class SetVCD:
     """
     Query VCD signals with functionally, and combine them with set theory operators.
     """
 
-    def __init__(self, vcd: VCDInput, clock: str = "clk") -> None:
+    def __init__(
+        self,
+        vcd: VCDInput,
+        clock: str = "clk",
+        xz_method: Optional[XZMethod] = None,
+        none_ignore: bool = True,
+    ) -> None:
         """
         Args:
             vcd: Either a filename (str/Path) to a VCD file, or an already-parsed
@@ -128,6 +160,14 @@ class SetVCD:
             clock: Exact name of the clock signal to use as time reference. This
                 signal's last transition determines the iteration range. Must match
                 a signal name exactly (case-sensitive).
+            xz_method: Controls how x/z values are handled in signal filters.
+                - XZIgnore() (default): Skip timesteps where any value is x/z
+                - XZNone(): Convert x/z to None and pass to filter
+                - XZValue(replacement): Replace x/z with specific integer value
+            none_ignore: Whether to skip timesteps with None values (default: True).
+                When True, timesteps where sm1, s, or sp1 is None are skipped.
+                When False, None values are passed to the filter function.
+                Common None sources: boundaries (t=0, last_clock) and x/z values.
         """
         # Load VCD object
         if isinstance(vcd, (str, Path)):
@@ -159,6 +199,12 @@ class SetVCD:
 
         # Initialize signal storage
         self.sigs: Dict[str, SignalProtocol] = {}
+
+        # Store x/z and None handling configuration
+        if xz_method is None:
+            xz_method = XZIgnore()
+        self.xz_method: XZMethod = xz_method
+        self.none_ignore: bool = none_ignore
 
         # Find clock signal - EXACT match only
         if clock not in all_signals:
@@ -321,6 +367,21 @@ class SetVCD:
                     signal_obj[time + 1] if time < self.last_clock else None
                 )
 
+                # XZ handling (BEFORE conversion)
+                if isinstance(self.xz_method, XZIgnore):
+                    # Skip if any value has x/z
+                    if _has_xz(sm1_str) or _has_xz(s_str) or _has_xz(sp1_str):
+                        continue
+                elif isinstance(self.xz_method, XZValue):
+                    # Only replace for Raw/FP, not for String
+                    if not isinstance(value_type, String):
+                        if sm1_str is not None:
+                            sm1_str = _replace_xz(sm1_str, self.xz_method.replacement)
+                        s_str = _replace_xz(s_str, self.xz_method.replacement)
+                        if sp1_str is not None:
+                            sp1_str = _replace_xz(sp1_str, self.xz_method.replacement)
+                # else XZNone: let conversion naturally handle x/z → None
+
                 # Convert values using specified ValueType (None for boundaries)
                 sm1: AnyValue = (
                     _convert_value(sm1_str, value_type) if sm1_str is not None else None
@@ -329,6 +390,12 @@ class SetVCD:
                 sp1: AnyValue = (
                     _convert_value(sp1_str, value_type) if sp1_str is not None else None
                 )
+
+                # None handling (AFTER conversion)
+                if self.none_ignore:
+                    # Skip if any value is None
+                    if sm1 is None or s is None or sp1 is None:
+                        continue
 
                 # Evaluate user's condition
                 try:

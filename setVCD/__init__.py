@@ -22,9 +22,13 @@ from .types import (
     Value,
     ValueType,
     VCDInput,
+    XZIgnore,
+    XZMethod,
+    XZNone,
+    XZValue,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __all__ = [
     "SetVCD",
     # Exceptions
@@ -48,4 +52,9 @@ __all__ = [
     "Raw",
     "String",
     "FP",
+    # XZMethods
+    "XZMethod",
+    "XZIgnore",
+    "XZNone",
+    "XZValue",
 ]

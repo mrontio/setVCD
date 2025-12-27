@@ -146,6 +146,79 @@ class FP:
 ValueType = Union[Raw, String, FP]
 """Union of all ValueType options for signal value conversion."""
 
+
+# XZMethod classes for controlling x/z value handling
+@dataclass(frozen=True)
+class XZIgnore:
+    """Skip timesteps where any signal value contains x or z (default behavior).
+
+    When any of (sm1, s, sp1) contains x/z, the filter function is not called
+    for that timestep and the timestep is excluded from results.
+
+    This is the most efficient option as it avoids value conversion for
+    x/z-containing timesteps.
+
+    Example:
+        >>> # Default behavior - skip all x/z timesteps
+        >>> vs = SetVCD("sim.vcd", clock="clk")  # xz_method=XZIgnore() by default
+        >>> valid = vs.get("data", lambda sm1, s, sp1: s == 5)
+        >>> # Timesteps where data contains x/z are automatically excluded
+    """
+
+    pass
+
+
+@dataclass(frozen=True)
+class XZNone:
+    """Convert x/z values to None before passing to filter function.
+
+    X and Z values in the raw VCD signal are converted to None (for Raw/FP)
+    or preserved as strings (for String), then passed to the filter function.
+
+    This allows filter functions to explicitly handle x/z values.
+
+    Example:
+        >>> # Handle x/z values explicitly in filter
+        >>> vs = SetVCD("sim.vcd", clock="clk", xz_method=XZNone())
+        >>> valid_or_xz = vs.get("data",
+        ...                      lambda sm1, s, sp1: s is None or s == 5)
+        >>> # Filter receives None for x/z values and can handle them
+    """
+
+    pass
+
+
+@dataclass(frozen=True)
+class XZValue:
+    """Replace x/z values with a specific integer value.
+
+    For Raw() and FP() value types, x/z values in the binary string are
+    replaced with the binary representation of the replacement value.
+    For String() value type, x/z values are preserved as literal strings
+    (the replacement is ignored).
+
+    Args:
+        replacement: Integer value to use instead of x/z.
+            Must be non-negative. If larger than the signal width,
+            it will be truncated to fit.
+
+    Examples:
+        >>> # Replace x/z with 0 for integer comparison
+        >>> vs = SetVCD("sim.vcd", clock="clk", xz_method=XZValue(replacement=0))
+        >>> valid = vs.get("data", lambda sm1, s, sp1: s == 5, value_type=Raw())
+        >>> # x/z values become 0, can be compared normally
+        >>>
+        >>> # With String type, x/z is preserved (replacement ignored)
+        >>> has_xz = vs.get("data", lambda sm1, s, sp1: 'x' in s,
+        ...                 value_type=String(), xz_method=XZValue(replacement=0))
+    """
+
+    replacement: int
+
+
+XZMethod = Union[XZIgnore, XZNone, XZValue]
+"""Union of all XZMethod options for x/z value handling."""
+
 # Polymorphic value type aliases
 RawValue = Optional[int]
 """Signal value as integer (binary conversion) or None (for x/z/boundaries)."""

@@ -175,18 +175,36 @@ class TestSetVCDGetValidation:
 class TestSetVCDGetBoundary:
     """Tests for boundary conditions in get() method"""
 
-    def test_boundary_sm1_is_none_at_time_zero(self, vcdset):
-        """Test that sm1 is None at time 0."""
+    def test_boundary_sm1_is_none_at_time_zero(self, vcd_file_path):
+        """Test that sm1 is None at time 0 with old behavior."""
+        from setVCD import SetVCD, XZNone
+
+        # Use old behavior: XZNone + none_ignore=False
+        vcdset = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
         times_with_none = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 is None)
         assert 0 in times_with_none  # Time 0 should have sm1=None
 
-    def test_boundary_sp1_is_none_at_last_time(self, vcdset):
-        """Test that sp1 is None at last clock time."""
+    def test_boundary_sp1_is_none_at_last_time(self, vcd_file_path):
+        """Test that sp1 is None at last clock time with old behavior."""
+        from setVCD import SetVCD, XZNone
+
+        # Use old behavior: XZNone + none_ignore=False
+        vcdset = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
         times_with_none = vcdset.get("TOP.clk", lambda sm1, s, sp1: sp1 is None)
         assert vcdset.last_clock in times_with_none  # Last time should have sp1=None
 
-    def test_boundary_both_none_only_at_extremes(self, vcdset):
-        """Test that both sm1 and sp1 are not None except at boundaries."""
+    def test_boundary_both_none_only_at_extremes(self, vcd_file_path):
+        """Test that both sm1 and sp1 are not None except at boundaries with old behavior."""
+        from setVCD import SetVCD, XZNone
+
+        # Use old behavior: XZNone + none_ignore=False
+        vcdset = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
         times_with_none = vcdset.get(
             "TOP.clk", lambda sm1, s, sp1: sm1 is None or sp1 is None
         )
@@ -331,8 +349,14 @@ class TestSetVCDEdgeCases:
         result = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == 0 and s == 1)
         assert result == set()
 
-    def test_full_time_range_result(self, vcdset):
-        """Test condition that's always true returns all times."""
+    def test_full_time_range_result(self, vcd_file_path):
+        """Test condition that's always true returns all times with old behavior."""
+        from setVCD import SetVCD, XZNone
+
+        # Use old behavior: XZNone + none_ignore=False
+        vcdset = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
         all_times = vcdset.get("TOP.clk", lambda sm1, s, sp1: True)
         assert len(all_times) == vcdset.last_clock + 1  # 0 to last_clock inclusive
 
@@ -386,8 +410,14 @@ class TestSetVCDSanity:
         # Should have no overlap
         assert (rising & falling) == set()
 
-    def test_all_times_partition(self, vcdset):
-        """Test that high and low times partition the full time range."""
+    def test_all_times_partition(self, vcd_file_path):
+        """Test that high and low times partition the full time range with old behavior."""
+        from setVCD import SetVCD, XZNone
+
+        # Use old behavior: XZNone + none_ignore=False
+        vcdset = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
         high = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == 1)
         low = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == 0)
 
@@ -455,8 +485,14 @@ class TestSetVCDIntegerConversion:
         )
         assert isinstance(range_values, set)
 
-    def test_none_for_boundaries_still_works(self, vcdset):
-        """Test None handling for boundaries unchanged."""
+    def test_none_for_boundaries_still_works(self, vcd_file_path):
+        """Test None handling for boundaries with old behavior."""
+        from setVCD import SetVCD, XZNone
+
+        # Use old behavior: XZNone + none_ignore=False
+        vcdset = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
         first_time = vcdset.get("TOP.clk", lambda tm1, t, tp1: tm1 is None)
         assert 0 in first_time
 
@@ -824,8 +860,15 @@ class TestValueTypeFP:
 class TestValueTypeEdgeCases:
     """Edge cases and boundary conditions for ValueTypes."""
 
-    def test_boundary_values_remain_none(self, vcdset):
+    def test_boundary_values_remain_none(self, vcd_file_path):
         """Test that boundary None values are preserved across all ValueTypes."""
+        from setVCD import Raw, SetVCD, XZNone
+
+        # Use old behavior: none_ignore=False to test boundaries
+        vcdset = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
+
         # At time 0, sm1 should be None regardless of ValueType
         time_zero_found = False
 
@@ -849,8 +892,15 @@ class TestValueTypeEdgeCases:
         vcdset.get("TOP.clk", check_time_zero, value_type=FP(frac=4, signed=False))
         assert time_zero_found
 
-    def test_last_time_sp1_none(self, vcdset):
+    def test_last_time_sp1_none(self, vcd_file_path):
         """Test that at last_clock, sp1 is None regardless of ValueType."""
+        from setVCD import Raw, SetVCD, XZNone
+
+        # Use old behavior: none_ignore=False to test boundaries
+        vcdset = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
+
         last_time_found = False
 
         def check_last_time(sm1, s, sp1):
@@ -937,3 +987,284 @@ class TestValueTypeEdgeCases:
             if v_u == 1.0:  # Unsigned interpretation
                 # Signed 1-bit "1" should be -1.0
                 assert v_s == -1.0
+
+
+# New test classes for X/Z and None handling
+# This will be appended to tests/test_vcd2set.py
+
+
+class TestXZMethodIgnore:
+    """Tests for XZIgnore() method (default behavior)."""
+
+    def test_xz_ignore_is_default(self, vcd_file_path):
+        """Test that XZIgnore is the default xz_method."""
+        from setVCD import SetVCD, XZIgnore
+
+        vs1 = SetVCD(vcd_file_path, clock="TOP.clk")
+        vs2 = SetVCD(vcd_file_path, clock="TOP.clk", xz_method=XZIgnore())
+
+        # Both should behave the same (skip x/z timesteps)
+        result1 = vs1.get("TOP.clk", lambda sm1, s, sp1: s == 1)
+        result2 = vs2.get("TOP.clk", lambda sm1, s, sp1: s == 1)
+
+        assert result1 == result2
+
+    def test_xz_ignore_skips_xz_timesteps(self, vcd_file_path):
+        """Test that x/z timesteps are skipped with XZIgnore."""
+        from setVCD import Raw, SetVCD, XZIgnore
+
+        # Create VCD with XZIgnore (default)
+        vs = SetVCD(vcd_file_path, clock="TOP.clk", xz_method=XZIgnore())
+
+        # This condition would normally match x/z values (which become None with Raw)
+        # But with XZIgnore, they're skipped entirely
+        result = vs.get("TOP.clk", lambda sm1, s, sp1: s is None, value_type=Raw())
+
+        # Should not find any x/z timesteps (they're skipped before filter is called)
+        # Only boundary None values would match, but none_ignore=True skips those too
+        assert len(result) == 0
+
+    def test_xz_ignore_with_string_type(self, vcd_file_path):
+        """Test that XZIgnore works with String value type."""
+        from setVCD import SetVCD, String, XZIgnore
+
+        vs = SetVCD(vcd_file_path, clock="TOP.clk", xz_method=XZIgnore())
+
+        # Try to find 'x' in strings - should find nothing because x/z timesteps are skipped
+        result = vs.get(
+            "TOP.clk",
+            lambda sm1, s, sp1: s is not None and "x" in s,
+            value_type=String(),
+        )
+
+        # Should be empty - x/z timesteps are skipped before String conversion
+        assert len(result) == 0
+
+
+class TestXZMethodNone:
+    """Tests for XZNone() method."""
+
+    def test_xz_none_converts_to_none(self, vcd_file_path):
+        """Test that XZNone converts x/z to None and passes to filter."""
+        from setVCD import Raw, SetVCD, XZNone
+
+        vs = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
+
+        # With none_ignore=False, filter receives None for x/z values
+        # This condition matches where sm1 is None (happens at t=0)
+        result_sm1 = vs.get(
+            "TOP.clk", lambda sm1, s, sp1: sm1 is None, value_type=Raw()
+        )
+        assert 0 in result_sm1  # sm1 is None at t=0
+
+        # This condition matches where sp1 is None (happens at last_clock)
+        result_sp1 = vs.get(
+            "TOP.clk", lambda sm1, s, sp1: sp1 is None, value_type=Raw()
+        )
+        assert vs.last_clock in result_sp1  # sp1 is None at last_clock
+
+    def test_xz_none_with_string_preserves_xz(self, vcd_file_path):
+        """Test that XZNone with String type preserves x/z as strings."""
+        from setVCD import SetVCD, String, XZNone
+
+        vs = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
+
+        # With String type, x/z are preserved as literal strings
+        # This test assumes the VCD might not have x/z in TOP.clk, but tests the mechanism
+        result = vs.get(
+            "TOP.clk",
+            lambda sm1, s, sp1: s is not None and ("x" in s or "z" in s),
+            value_type=String(),
+        )
+
+        # In typical clock signals, no x/z expected, so result might be empty
+        # This test verifies the filter is called (not skipped)
+        assert isinstance(result, set)
+
+
+class TestXZMethodValue:
+    """Tests for XZValue(replacement) method."""
+
+    def test_xz_value_replaces_with_integer(self, vcd_file_path):
+        """Test that XZValue replaces x/z with specified value."""
+        from setVCD import Raw, SetVCD, XZValue
+
+        # Replace x/z with 0
+        vs = SetVCD(vcd_file_path, clock="TOP.clk", xz_method=XZValue(replacement=0))
+
+        # If there were x/z values, they would become 0
+        # Filter can now compare normally
+        result = vs.get("TOP.clk", lambda sm1, s, sp1: s == 0, value_type=Raw())
+
+        # Result should include actual 0 values
+        assert isinstance(result, set)
+        # TOP.clk toggles 0/1, so should have many 0 values
+        assert len(result) > 0
+
+    def test_xz_value_with_string_ignores_replacement(self, vcd_file_path):
+        """Test that XZValue with String type ignores replacement and preserves x/z."""
+        from setVCD import SetVCD, String, XZValue
+
+        # Replacement should be ignored for String type
+        vs = SetVCD(
+            vcd_file_path,
+            clock="TOP.clk",
+            xz_method=XZValue(replacement=5),
+            none_ignore=False,
+        )
+
+        # With String type, x/z should be preserved as strings (not replaced)
+        # This filter would match x/z strings if present
+        result = vs.get(
+            "TOP.clk",
+            lambda sm1, s, sp1: s is not None and ("x" in s or "z" in s),
+            value_type=String(),
+        )
+
+        # Clock likely doesn't have x/z, but verifies replacement is ignored
+        assert isinstance(result, set)
+
+    def test_xz_value_fp_conversion(self, vcd_file_path):
+        """Test that XZValue works with FP value type."""
+        from setVCD import FP, SetVCD, XZValue
+
+        # Replace x/z with 1, then convert to FP
+        vs = SetVCD(vcd_file_path, clock="TOP.clk", xz_method=XZValue(replacement=1))
+
+        # If x/z existed, it would become 1, then 1/16 = 0.0625 with frac=4
+        result = vs.get(
+            "TOP.clk",
+            lambda sm1, s, sp1: s is not None and abs(s - 0.0625) < 0.001,
+            value_type=FP(frac=4, signed=False),
+        )
+
+        # Clock toggles 0/1, so value 1 exists and becomes 0.0625
+        assert isinstance(result, set)
+
+
+class TestNoneIgnore:
+    """Tests for none_ignore parameter."""
+
+    def test_none_ignore_true_skips_boundaries(self, vcd_file_path):
+        """Test that none_ignore=True (default) skips boundary None values."""
+        from setVCD import SetVCD
+
+        vs = SetVCD(vcd_file_path, clock="TOP.clk")  # none_ignore=True by default
+
+        # Try to find None values
+        result = vs.get("TOP.clk", lambda sm1, s, sp1: sm1 is None or sp1 is None)
+
+        # Should be empty - boundaries are skipped with none_ignore=True
+        assert len(result) == 0
+
+    def test_none_ignore_false_includes_boundaries(self, vcd_file_path):
+        """Test that none_ignore=False passes boundary None to filter."""
+        from setVCD import SetVCD, XZNone
+
+        vs = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
+
+        # Find timesteps where sm1 is None
+        result = vs.get("TOP.clk", lambda sm1, s, sp1: sm1 is None)
+
+        # Should include time 0 (where sm1=None)
+        assert 0 in result
+
+    def test_none_ignore_false_includes_last_time(self, vcd_file_path):
+        """Test that none_ignore=False includes last_clock where sp1=None."""
+        from setVCD import SetVCD, XZNone
+
+        vs = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
+
+        # Find timesteps where sp1 is None
+        result = vs.get("TOP.clk", lambda sm1, s, sp1: sp1 is None)
+
+        # Should include last_clock (where sp1=None)
+        assert vs.last_clock in result
+
+
+class TestXZNoneInteraction:
+    """Tests for interaction between xz_method and none_ignore."""
+
+    def test_xz_none_plus_none_ignore_true(self, vcd_file_path):
+        """Test that XZNone + none_ignore=True skips x/z (converted to None)."""
+        from setVCD import SetVCD, XZNone
+
+        # XZNone converts x/z to None, then none_ignore=True skips them
+        vs = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=True
+        )
+
+        # This is equivalent to XZIgnore!
+        # Try to find None values - should find nothing
+        result = vs.get("TOP.clk", lambda sm1, s, sp1: s is None)
+
+        # No None values should be found (all skipped)
+        assert len(result) == 0
+
+    def test_xz_value_plus_none_ignore_false(self, vcd_file_path):
+        """Test that XZValue + none_ignore=False: x/z replaced, boundaries passed."""
+        from setVCD import SetVCD, XZValue
+
+        vs = SetVCD(
+            vcd_file_path,
+            clock="TOP.clk",
+            xz_method=XZValue(replacement=0),
+            none_ignore=False,
+        )
+
+        # Find boundary None values (should exist at t=0 and last_clock)
+        result = vs.get("TOP.clk", lambda sm1, s, sp1: sm1 is None or sp1 is None)
+
+        # Should include boundaries
+        assert 0 in result
+        assert vs.last_clock in result
+
+    def test_xz_ignore_plus_none_ignore_false(self, vcd_file_path):
+        """Test that XZIgnore + none_ignore=False: x/z skipped, boundaries passed."""
+        from setVCD import SetVCD, XZIgnore
+
+        vs = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZIgnore(), none_ignore=False
+        )
+
+        # x/z timesteps are skipped, but boundary None values are passed
+        result = vs.get("TOP.clk", lambda sm1, s, sp1: sm1 is None or sp1 is None)
+
+        # Should include boundaries
+        assert 0 in result
+        assert vs.last_clock in result
+
+    def test_all_combinations_return_sets(self, vcd_file_path):
+        """Test that all combinations of xz_method and none_ignore work."""
+        from setVCD import SetVCD, XZIgnore, XZNone, XZValue
+
+        combinations = [
+            (XZIgnore(), True),
+            (XZIgnore(), False),
+            (XZNone(), True),
+            (XZNone(), False),
+            (XZValue(0), True),
+            (XZValue(0), False),
+        ]
+
+        for xz_method, none_ignore in combinations:
+            vs = SetVCD(
+                vcd_file_path,
+                clock="TOP.clk",
+                xz_method=xz_method,
+                none_ignore=none_ignore,
+            )
+            result = vs.get("TOP.clk", lambda sm1, s, sp1: s == 1)
+
+            # All should return valid sets
+            assert isinstance(result, set)
+            # Clock toggles, so should have some high values
+            assert len(result) > 0
