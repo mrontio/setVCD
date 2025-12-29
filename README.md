@@ -162,6 +162,71 @@ state_b = sv.get("state[1:0]", lambda sm1, s, sp1: s == 1)
 transition = sv.get("state[1:0]", lambda sm1, s, sp1: sm1 == 0 and s == 1)
 ```
 
+## Flexible Signatures
+
+Signal condition functions can accept 1, 2, or 3 parameters, automatically detected:
+
+### 1-Parameter: Current Value Only
+
+Use when you only need the current signal value:
+
+```python
+# Find all times when signal is high
+high_times = sv.get("valid", lambda s: s == 1)
+
+# Arithmetic comparisons
+large_values = sv.get("counter", lambda s: s is not None and s > 100)
+
+# With String ValueType
+pattern = sv.get("bus[3:0]", lambda s: s == "1111", value_type=String())
+```
+
+**Boundary behavior**: No boundary effects - all timesteps available.
+
+### 2-Parameter: Current and Next
+
+Use for forward-looking patterns:
+
+```python
+# Find times when signal will rise next cycle
+will_rise = sv.get("valid", lambda s, sp1: s == 0 and sp1 == 1)
+
+# Detect stable transitions
+stable_high = sv.get("data", lambda s, sp1: s == 1 and sp1 == 1)
+
+# Setup check: data stable before clock edge
+setup_ok = sv.get("data",
+                  lambda s, sp1: s == sp1,  # Data not changing
+                  value_type=Raw())
+```
+
+**Boundary behavior**: Last timestep excluded when `none_ignore=True` (default), since `sp1=None` there.
+
+### 3-Parameter: Previous, Current, and Next
+
+Use for complex temporal patterns (classic mode):
+
+```python
+# Rising edge (backward-looking)
+rising = sv.get("clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+
+# Glitch detection (short pulse)
+glitch = sv.get("sig", lambda sm1, s, sp1: sm1 == 0 and s == 1 and sp1 == 0)
+
+# Change detection
+changes = sv.get("data", lambda sm1, s, sp1: sm1 is not None and sm1 != s)
+```
+
+**Boundary behavior**: First timestep has `sm1=None`, last has `sp1=None` (excluded with `none_ignore=True`).
+
+### Choosing the Right Signature
+
+| Signature | Use Case | Boundary Impact |
+|-----------|----------|-----------------|
+| 1-param   | Simple state checks (high/low, thresholds) | None |
+| 2-param   | Forward-looking patterns (will rise, setup checks) | Last timestep |
+| 3-param   | Temporal patterns (edges, glitches, changes) | First & last |
+
 ## Value Types
 
 SetVCD supports three ValueType options to control how signal values are converted before being passed to your condition lambdas:

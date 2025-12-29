@@ -1,8 +1,11 @@
 """SetVCD - Convert VCD signals to sets of time points based on conditions."""
 
+import inspect
 import re
+from inspect import Parameter
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Callable, Dict, List, Optional, Set, Tuple, Union
+from weakref import WeakKeyDictionary
 
 import vcdvcd
 
@@ -21,7 +24,6 @@ from .types import (
     FPValue,
     Raw,
     RawValue,
-    SignalConditionProtocol,
     SignalProtocol,
     String,
     StringValue,
@@ -140,6 +142,63 @@ def _replace_xz(value_str: str, replacement: int) -> str:
     return binary
 
 
+def _inspect_condition_signature(func: Callable[..., bool]) -> int:
+    """Determine number of parameters in signal condition function.
+
+    Uses inspect.signature() to count parameters. Validates that
+    the function accepts exactly 1, 2, or 3 parameters.
+
+    Args:
+        func: Signal condition callable to inspect
+
+    Returns:
+        Number of parameters (1, 2, or 3)
+
+    Raises:
+        InvalidSignalConditionError: If function doesn't have 1, 2, or 3 params
+
+    Examples:
+        >>> _inspect_condition_signature(lambda s: s == 1)
+        1
+        >>> _inspect_condition_signature(lambda s, sp1: s == 0 and sp1 == 1)
+        2
+        >>> _inspect_condition_signature(lambda sm1, s, sp1: sm1 == 0 and s == 1)
+        3
+    """
+    try:
+        sig = inspect.signature(func)
+
+        # Reject *args and **kwargs
+        for param in sig.parameters.values():
+            if param.kind in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD):
+                raise InvalidSignalConditionError(
+                    "Signal condition cannot use *args or **kwargs. "
+                    "Use explicit parameters (1, 2, or 3)."
+                )
+
+        # Filter out 'self' if it's a bound method
+        params = [p for p in sig.parameters.values() if p.name != "self"]
+        param_count = len(params)
+
+        if param_count not in (1, 2, 3):
+            raise InvalidSignalConditionError(
+                f"Signal condition must accept 1, 2, or 3 parameters, got {param_count}. "
+                f"Supported signatures:\n"
+                f"  - 1 parameter:  lambda s: ...\n"
+                f"  - 2 parameters: lambda s, sp1: ...\n"
+                f"  - 3 parameters: lambda sm1, s, sp1: ..."
+            )
+
+        return param_count
+
+    except InvalidSignalConditionError:
+        raise
+    except Exception as e:
+        raise InvalidSignalConditionError(
+            f"Failed to inspect signal_condition signature: {e}"
+        ) from e
+
+
 class SetVCD:
     """
     Query VCD signals with functionally, and combine them with set theory operators.
@@ -206,6 +265,12 @@ class SetVCD:
         self.xz_method: XZMethod = xz_method
         self.none_ignore: bool = none_ignore
 
+        # Cache for signal condition signature inspection
+        # Use WeakKeyDictionary to avoid stale cache entries from reused object IDs
+        self._condition_signature_cache: WeakKeyDictionary[Callable[..., bool], int] = (
+            WeakKeyDictionary()
+        )
+
         # Find clock signal - EXACT match only
         if clock not in all_signals:
             # Provide helpful error message with similar signals using fuzzy matching
@@ -271,23 +336,25 @@ class SetVCD:
     def get(
         self,
         signal_name: str,
-        signal_condition: Union[
-            SignalConditionProtocol[int],
-            SignalConditionProtocol[str],
-            SignalConditionProtocol[float],
-        ],
+        signal_condition: Callable[..., bool],
         value_type: Optional[ValueType] = None,
     ) -> Set[Time]:
         """Filter time points based on signal condition.
 
         Args:
             signal_name: Exact name of signal (case-sensitive). Must exist in VCD file.
-            signal_condition: Function (sm1, s, sp1) -> bool that evaluates signal values.
+            signal_condition: Function that evaluates signal values. Supports three signatures:
+                - 1 parameter:  lambda s: bool
+                  Receives only current value. Use for simple level checks.
+                - 2 parameters: lambda s, sp1: bool
+                  Receives current and next value. Use for forward-looking patterns.
+                - 3 parameters: lambda sm1, s, sp1: bool
+                  Receives previous, current, and next values. Use for complex temporal patterns.
                 The value types passed depend on value_type parameter:
                 - Raw(): receives Optional[int] values
                 - String(): receives Optional[str] values
                 - FP(): receives Optional[float] values
-            value_type: Value conversion type (default: Raw())).
+            value_type: Value conversion type (default: Raw()).
                 - Raw(): Binary to int, x/z become None
                 - String(): Keep raw strings including x/z as literals
                 - FP(frac, signed): Fixed-point to float, x/z become NaN
@@ -296,16 +363,22 @@ class SetVCD:
             Set of timesteps where signal_condition returns True.
 
         Examples:
-            >>> # Integer comparison (default Raw)
+            >>> # 1-parameter: Simple level detection
+            >>> high = vs.get("valid", lambda s: s == 1)
+            >>>
+            >>> # 2-parameter: Forward-looking rising edge
+            >>> will_rise = vs.get("clk", lambda s, sp1: s == 0 and sp1 == 1)
+            >>>
+            >>> # 3-parameter: Classic rising edge (backward-looking)
             >>> rising = vs.get("clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
             >>>
             >>> # String matching to detect x/z
-            >>> has_x = vs.get("data", lambda sm1, s, sp1: s is not None and 'x' in s,
+            >>> has_x = vs.get("data", lambda s: s is not None and 'x' in s,
             ...                value_type=String())
             >>>
             >>> # Fixed-point comparison
             >>> above_threshold = vs.get("temp",
-            ...                          lambda sm1, s, sp1: s is not None and s > 25.5,
+            ...                          lambda s: s is not None and s > 25.5,
             ...                          value_type=FP(frac=8, signed=True))
         """
         # Default to Raw() if not specified
@@ -355,6 +428,13 @@ class SetVCD:
         except Exception as e:
             raise VCDParseError(f"Failed to access signal '{signal_name}': {e}") from e
 
+        # Inspect condition signature and cache result
+        if signal_condition not in self._condition_signature_cache:
+            self._condition_signature_cache[signal_condition] = (
+                _inspect_condition_signature(signal_condition)
+            )
+        param_count = self._condition_signature_cache[signal_condition]
+
         # Iterate through ALL time steps (not just deltas)
         out: Set[Time] = set()
 
@@ -367,10 +447,14 @@ class SetVCD:
                     signal_obj[time + 1] if time < self.last_clock else None
                 )
 
-                # XZ handling (BEFORE conversion)
+                # XZ handling (BEFORE conversion) - parameter-count aware
                 if isinstance(self.xz_method, XZIgnore):
-                    # Skip if any value has x/z
-                    if _has_xz(sm1_str) or _has_xz(s_str) or _has_xz(sp1_str):
+                    # Only check values that will be used
+                    if _has_xz(s_str):  # Always check current
+                        continue
+                    if param_count >= 2 and _has_xz(sp1_str):  # Check sp1 if needed
+                        continue
+                    if param_count >= 3 and _has_xz(sm1_str):  # Check sm1 if needed
                         continue
                 elif isinstance(self.xz_method, XZValue):
                     # Only replace for Raw/FP, not for String
@@ -391,20 +475,29 @@ class SetVCD:
                     _convert_value(sp1_str, value_type) if sp1_str is not None else None
                 )
 
-                # None handling (AFTER conversion)
+                # None handling (AFTER conversion) - parameter-count aware
                 if self.none_ignore:
-                    # Skip if any value is None
-                    if sm1 is None or s is None or sp1 is None:
+                    # Only check None for values that will be passed to condition
+                    if s is None:  # Current value always matters
+                        continue
+                    if param_count >= 2 and sp1 is None:
+                        continue
+                    if param_count >= 3 and sm1 is None:
                         continue
 
-                # Evaluate user's condition
+                # Evaluate user's condition with appropriate number of arguments
                 try:
-                    # Tell pyright to ignore this because we have dependent types.
-                    check = signal_condition(sm1, s, sp1)  # type: ignore[arg-type]
+                    if param_count == 1:
+                        check = signal_condition(s)
+                    elif param_count == 2:
+                        check = signal_condition(s, sp1)
+                    else:  # param_count == 3
+                        check = signal_condition(sm1, s, sp1)
                 except Exception as e:
                     raise InvalidSignalConditionError(
                         f"signal_condition raised exception at time {time}: {e}. "
-                        f"Note: signal values can be None (for x/z values or boundaries)."
+                        f"Note: signal values can be None (for x/z values or boundaries). "
+                        f"Function signature: {param_count} parameters"
                     ) from e
 
                 # Add time to result set if condition is True

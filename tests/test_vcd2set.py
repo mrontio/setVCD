@@ -1268,3 +1268,236 @@ class TestXZNoneInteraction:
             assert isinstance(result, set)
             # Clock toggles, so should have some high values
             assert len(result) > 0
+
+
+class TestSetVCDFlexibleSignatures:
+    """Tests for flexible signal condition signatures (1, 2, 3 parameters)."""
+
+    # Signature Detection Tests
+    def test_1_param_signature_detection(self, vcdset):
+        """Test 1-parameter lambda is detected and works."""
+        result = vcdset.get("TOP.clk", lambda s: s == 1)
+        assert isinstance(result, set)
+        assert len(result) > 0
+
+    def test_2_param_signature_detection(self, vcdset):
+        """Test 2-parameter lambda is detected and works."""
+        result = vcdset.get("TOP.clk", lambda s, sp1: s == 0 and sp1 == 1)
+        assert isinstance(result, set)
+
+    def test_3_param_backward_compatible(self, vcdset):
+        """Test 3-parameter lambda still works (backward compatibility)."""
+        result = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+        assert isinstance(result, set)
+
+    def test_invalid_0_params(self, vcdset):
+        """Test 0-parameter function raises clear error."""
+        with pytest.raises(InvalidSignalConditionError, match="must accept 1, 2, or 3"):
+            vcdset.get("TOP.clk", lambda: True)
+
+    def test_invalid_4_params(self, vcdset):
+        """Test 4-parameter function raises clear error."""
+        with pytest.raises(InvalidSignalConditionError, match="must accept 1, 2, or 3"):
+            vcdset.get("TOP.clk", lambda a, b, c, d: True)
+
+    # Boundary Behavior Tests
+    def test_1_param_includes_all_timesteps(self, vcd_file_path):
+        """Test 1-param includes first and last timesteps (no boundary None)."""
+        from setVCD import SetVCD, XZNone
+
+        vcdset = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
+        result = vcdset.get("TOP.clk", lambda s: True)
+
+        # Should include time 0 and last_clock (no boundary None with 1-param)
+        assert 0 in result
+        assert vcdset.last_clock in result
+        assert len(result) == vcdset.last_clock + 1
+
+    def test_2_param_excludes_last_timestep(self, vcd_file_path):
+        """Test 2-param excludes last timestep when none_ignore=True."""
+        vcdset = SetVCD(vcd_file_path, clock="TOP.clk")  # none_ignore=True default
+        result = vcdset.get("TOP.clk", lambda s, sp1: True)
+
+        # Should include time 0 but NOT last_clock (sp1 is None there)
+        assert 0 in result
+        assert vcdset.last_clock not in result
+
+    def test_2_param_includes_last_with_none_ignore_false(self, vcd_file_path):
+        """Test 2-param includes last timestep when none_ignore=False."""
+        from setVCD import SetVCD, XZNone
+
+        vcdset = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
+        result = vcdset.get("TOP.clk", lambda s, sp1: sp1 is None)
+
+        # Should include last_clock (where sp1 is None)
+        assert vcdset.last_clock in result
+
+    def test_3_param_boundary_behavior_unchanged(self, vcd_file_path):
+        """Test 3-param has same boundary behavior as before (backward compat)."""
+        from setVCD import SetVCD, XZNone
+
+        vcdset = SetVCD(
+            vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
+        )
+
+        # Test sm1 is None at time 0
+        first = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 is None)
+        assert 0 in first
+
+        # Test sp1 is None at last_clock
+        last = vcdset.get("TOP.clk", lambda sm1, s, sp1: sp1 is None)
+        assert vcdset.last_clock in last
+
+    def test_1_param_equivalent_to_3_param_with_s_only(self, vcdset):
+        """Test 1-param gives same results as 3-param that only uses s."""
+        result_1 = vcdset.get("TOP.clk", lambda s: s == 1)
+        result_3 = vcdset.get("TOP.clk", lambda sm1, s, sp1: s == 1)
+        assert result_1 == result_3
+
+    def test_2_param_rising_edge_detection(self, vcdset):
+        """Test 2-param can detect rising edges using only s and sp1."""
+        # Rising edge: s==0 and sp1==1 (looking forward)
+        result = vcdset.get("TOP.clk", lambda s, sp1: s == 0 and sp1 == 1)
+        assert isinstance(result, set)
+        assert len(result) > 0
+
+        # Compare with 3-param version (using sm1 for backward looking)
+        result_3 = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
+
+        # Should be different! 2-param looks forward, 3-param looks backward
+        # Rising edge at time t: 3-param includes t, 2-param includes t-1
+        assert result != result_3
+
+    # XZ Interaction Tests
+    def test_1_param_xz_ignore_only_checks_current(self, vcdset):
+        """Test XZIgnore with 1-param only checks current value."""
+        # If signal has x/z only at sm1 or sp1, 1-param should still work
+        result = vcdset.get("TOP.clk", lambda s: s == 1)
+
+        # Should succeed (assuming TOP.clk doesn't have x/z in current values)
+        assert isinstance(result, set)
+
+    def test_2_param_xz_ignore_checks_current_and_next(self, vcdset):
+        """Test XZIgnore with 2-param checks both s and sp1."""
+        # Test with a signal that might have x/z
+        result = vcdset.get("TOP.io_input_valid", lambda s, sp1: True)
+        assert isinstance(result, set)
+
+    # ValueType Tests
+    def test_1_param_with_string_valuetype(self, vcdset):
+        """Test 1-param works with String ValueType."""
+        result = vcdset.get("TOP.clk", lambda s: s == "1", value_type=String())
+        assert isinstance(result, set)
+
+    def test_2_param_with_fp_valuetype(self, vcdset):
+        """Test 2-param works with FP ValueType."""
+        import math
+
+        result = vcdset.get(
+            "TOP.io_input_payload_fragment_value_0[15:0]",
+            lambda s, sp1: (
+                s is not None
+                and sp1 is not None
+                and not math.isnan(s)
+                and not math.isnan(sp1)
+                and sp1 > s  # Next value greater than current
+            ),
+            value_type=FP(frac=0, signed=False),
+        )
+        assert isinstance(result, set)
+
+    # Caching Tests
+    def test_signature_caching(self, vcdset):
+        """Test that signature inspection is cached."""
+
+        def condition(s):
+            return s == 1
+
+        # First call - should inspect and cache
+        result1 = vcdset.get("TOP.clk", condition)
+
+        # Check cache was populated
+        assert condition in vcdset._condition_signature_cache
+        assert vcdset._condition_signature_cache[condition] == 1
+
+        # Second call - should use cache
+        result2 = vcdset.get("TOP.clk", condition)
+
+        # Results should be identical
+        assert result1 == result2
+
+    def test_different_functions_cached_separately(self, vcdset):
+        """Test that different function objects have separate cache entries."""
+
+        def cond1(s):
+            return s == 1
+
+        def cond2(s, sp1):
+            return s == 0 and sp1 == 1
+
+        vcdset.get("TOP.clk", cond1)
+        vcdset.get("TOP.clk", cond2)
+
+        # Both should be in cache
+        assert cond1 in vcdset._condition_signature_cache
+        assert cond2 in vcdset._condition_signature_cache
+
+        # With correct counts
+        assert vcdset._condition_signature_cache[cond1] == 1
+        assert vcdset._condition_signature_cache[cond2] == 2
+
+    # Callable Class Tests
+    def test_callable_class_instance(self, vcdset):
+        """Test that callable class instances work."""
+
+        class HighDetector:
+            def __call__(self, s):
+                return s == 1
+
+        detector = HighDetector()
+        result = vcdset.get("TOP.clk", detector)
+        assert isinstance(result, set)
+        assert len(result) > 0
+
+    def test_callable_class_with_state(self, vcdset):
+        """Test callable class can maintain state."""
+
+        class CountingCondition:
+            def __init__(self):
+                self.call_count = 0
+
+            def __call__(self, s):
+                self.call_count += 1
+                return s == 1
+
+        condition = CountingCondition()
+        vcdset.get("TOP.clk", condition)
+
+        # Should have been called for each timestep
+        assert condition.call_count == vcdset.last_clock + 1
+
+    # Error Handling Tests
+    def test_varargs_not_supported(self, vcdset):
+        """Test that *args raises clear error."""
+        with pytest.raises(InvalidSignalConditionError, match="cannot use.*args"):
+            vcdset.get("TOP.clk", lambda *args: args[0] == 1)
+
+    def test_kwargs_not_supported(self, vcdset):
+        """Test that **kwargs raises clear error."""
+        with pytest.raises(InvalidSignalConditionError, match="cannot use.*kwargs"):
+            vcdset.get("TOP.clk", lambda **kwargs: kwargs["s"] == 1)
+
+    def test_exception_in_condition_includes_param_count(self, vcdset):
+        """Test that error message includes signature info."""
+
+        def bad_condition(s):
+            raise ValueError("Intentional error")
+
+        with pytest.raises(
+            InvalidSignalConditionError, match="raised exception.*1 parameters"
+        ):
+            vcdset.get("TOP.clk", bad_condition)
