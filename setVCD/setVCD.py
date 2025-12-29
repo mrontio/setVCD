@@ -185,7 +185,7 @@ def _inspect_condition_signature(func: Callable[..., bool]) -> int:
                 f"Signal condition must accept 1, 2, or 3 parameters, got {param_count}. "
                 f"Supported signatures:\n"
                 f"  - 1 parameter:  lambda s: ...\n"
-                f"  - 2 parameters: lambda s, sp1: ...\n"
+                f"  - 2 parameters: lambda sm1, s: ...\n"
                 f"  - 3 parameters: lambda sm1, s, sp1: ..."
             )
 
@@ -346,8 +346,8 @@ class SetVCD:
             signal_condition: Function that evaluates signal values. Supports three signatures:
                 - 1 parameter:  lambda s: bool
                   Receives only current value. Use for simple level checks.
-                - 2 parameters: lambda s, sp1: bool
-                  Receives current and next value. Use for forward-looking patterns.
+                - 2 parameters: lambda sm1, s: bool
+                  Receives previous and current value. Use for edge detection and transitions.
                 - 3 parameters: lambda sm1, s, sp1: bool
                   Receives previous, current, and next values. Use for complex temporal patterns.
                 The value types passed depend on value_type parameter:
@@ -366,8 +366,8 @@ class SetVCD:
             >>> # 1-parameter: Simple level detection
             >>> high = vs.get("valid", lambda s: s == 1)
             >>>
-            >>> # 2-parameter: Forward-looking rising edge
-            >>> will_rise = vs.get("clk", lambda s, sp1: s == 0 and sp1 == 1)
+            >>> # 2-parameter: Rising edge (backward-looking)
+            >>> rising = vs.get("clk", lambda sm1, s: sm1 == 0 and s == 1)
             >>>
             >>> # 3-parameter: Classic rising edge (backward-looking)
             >>> rising = vs.get("clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
@@ -452,9 +452,9 @@ class SetVCD:
                     # Only check values that will be used
                     if _has_xz(s_str):  # Always check current
                         continue
-                    if param_count >= 2 and _has_xz(sp1_str):  # Check sp1 if needed
+                    if param_count >= 2 and _has_xz(sm1_str):  # Check sm1 if needed
                         continue
-                    if param_count >= 3 and _has_xz(sm1_str):  # Check sm1 if needed
+                    if param_count >= 3 and _has_xz(sp1_str):  # Check sp1 if needed
                         continue
                 elif isinstance(self.xz_method, XZValue):
                     # Only replace for Raw/FP, not for String
@@ -480,9 +480,9 @@ class SetVCD:
                     # Only check None for values that will be passed to condition
                     if s is None:  # Current value always matters
                         continue
-                    if param_count >= 2 and sp1 is None:
+                    if param_count >= 2 and sm1 is None:
                         continue
-                    if param_count >= 3 and sm1 is None:
+                    if param_count >= 3 and sp1 is None:
                         continue
 
                 # Evaluate user's condition with appropriate number of arguments
@@ -490,7 +490,7 @@ class SetVCD:
                     if param_count == 1:
                         check = signal_condition(s)
                     elif param_count == 2:
-                        check = signal_condition(s, sp1)
+                        check = signal_condition(sm1, s)
                     else:  # param_count == 3
                         check = signal_condition(sm1, s, sp1)
                 except Exception as e:

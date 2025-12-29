@@ -1282,7 +1282,7 @@ class TestSetVCDFlexibleSignatures:
 
     def test_2_param_signature_detection(self, vcdset):
         """Test 2-parameter lambda is detected and works."""
-        result = vcdset.get("TOP.clk", lambda s, sp1: s == 0 and sp1 == 1)
+        result = vcdset.get("TOP.clk", lambda sm1, s: sm1 == 0 and s == 1)
         assert isinstance(result, set)
 
     def test_3_param_backward_compatible(self, vcdset):
@@ -1315,26 +1315,26 @@ class TestSetVCDFlexibleSignatures:
         assert vcdset.last_clock in result
         assert len(result) == vcdset.last_clock + 1
 
-    def test_2_param_excludes_last_timestep(self, vcd_file_path):
-        """Test 2-param excludes last timestep when none_ignore=True."""
+    def test_2_param_excludes_first_timestep(self, vcd_file_path):
+        """Test 2-param excludes first timestep when none_ignore=True."""
         vcdset = SetVCD(vcd_file_path, clock="TOP.clk")  # none_ignore=True default
-        result = vcdset.get("TOP.clk", lambda s, sp1: True)
+        result = vcdset.get("TOP.clk", lambda sm1, s: True)
 
-        # Should include time 0 but NOT last_clock (sp1 is None there)
-        assert 0 in result
-        assert vcdset.last_clock not in result
+        # Should NOT include time 0 (sm1 is None there) but should include last_clock
+        assert 0 not in result
+        assert vcdset.last_clock in result
 
-    def test_2_param_includes_last_with_none_ignore_false(self, vcd_file_path):
-        """Test 2-param includes last timestep when none_ignore=False."""
+    def test_2_param_includes_first_with_none_ignore_false(self, vcd_file_path):
+        """Test 2-param includes first timestep when none_ignore=False."""
         from setVCD import SetVCD, XZNone
 
         vcdset = SetVCD(
             vcd_file_path, clock="TOP.clk", xz_method=XZNone(), none_ignore=False
         )
-        result = vcdset.get("TOP.clk", lambda s, sp1: sp1 is None)
+        result = vcdset.get("TOP.clk", lambda sm1, s: sm1 is None)
 
-        # Should include last_clock (where sp1 is None)
-        assert vcdset.last_clock in result
+        # Should include time 0 (where sm1 is None)
+        assert 0 in result
 
     def test_3_param_boundary_behavior_unchanged(self, vcd_file_path):
         """Test 3-param has same boundary behavior as before (backward compat)."""
@@ -1359,18 +1359,17 @@ class TestSetVCDFlexibleSignatures:
         assert result_1 == result_3
 
     def test_2_param_rising_edge_detection(self, vcdset):
-        """Test 2-param can detect rising edges using only s and sp1."""
-        # Rising edge: s==0 and sp1==1 (looking forward)
-        result = vcdset.get("TOP.clk", lambda s, sp1: s == 0 and sp1 == 1)
-        assert isinstance(result, set)
-        assert len(result) > 0
+        """Test 2-param can detect rising edges using sm1 and s."""
+        # Rising edge: sm1==0 and s==1 (backward-looking)
+        result_2 = vcdset.get("TOP.clk", lambda sm1, s: sm1 == 0 and s == 1)
+        assert isinstance(result_2, set)
+        assert len(result_2) > 0
 
-        # Compare with 3-param version (using sm1 for backward looking)
+        # Compare with 3-param version (same backward looking pattern)
         result_3 = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
 
-        # Should be different! 2-param looks forward, 3-param looks backward
-        # Rising edge at time t: 3-param includes t, 2-param includes t-1
-        assert result != result_3
+        # Should be identical! Both look backward at sm1 and s
+        assert result_2 == result_3
 
     # XZ Interaction Tests
     def test_1_param_xz_ignore_only_checks_current(self, vcdset):
@@ -1381,10 +1380,10 @@ class TestSetVCDFlexibleSignatures:
         # Should succeed (assuming TOP.clk doesn't have x/z in current values)
         assert isinstance(result, set)
 
-    def test_2_param_xz_ignore_checks_current_and_next(self, vcdset):
-        """Test XZIgnore with 2-param checks both s and sp1."""
+    def test_2_param_xz_ignore_checks_prev_and_current(self, vcdset):
+        """Test XZIgnore with 2-param checks both sm1 and s."""
         # Test with a signal that might have x/z
-        result = vcdset.get("TOP.io_input_valid", lambda s, sp1: True)
+        result = vcdset.get("TOP.io_input_valid", lambda sm1, s: True)
         assert isinstance(result, set)
 
     # ValueType Tests
@@ -1399,12 +1398,12 @@ class TestSetVCDFlexibleSignatures:
 
         result = vcdset.get(
             "TOP.io_input_payload_fragment_value_0[15:0]",
-            lambda s, sp1: (
-                s is not None
-                and sp1 is not None
+            lambda sm1, s: (
+                sm1 is not None
+                and s is not None
+                and not math.isnan(sm1)
                 and not math.isnan(s)
-                and not math.isnan(sp1)
-                and sp1 > s  # Next value greater than current
+                and s > sm1  # Current value greater than previous (increasing)
             ),
             value_type=FP(frac=0, signed=False),
         )
@@ -1436,8 +1435,8 @@ class TestSetVCDFlexibleSignatures:
         def cond1(s):
             return s == 1
 
-        def cond2(s, sp1):
-            return s == 0 and sp1 == 1
+        def cond2(sm1, s):
+            return sm1 == 0 and s == 1
 
         vcdset.get("TOP.clk", cond1)
         vcdset.get("TOP.clk", cond2)

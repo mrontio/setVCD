@@ -183,24 +183,22 @@ pattern = sv.get("bus[3:0]", lambda s: s == "1111", value_type=String())
 
 **Boundary behavior**: No boundary effects - all timesteps available.
 
-### 2-Parameter: Current and Next
+### 2-Parameter: Previous and Current
 
-Use for forward-looking patterns:
+Use for edge detection and transitions:
 
 ```python
-# Find times when signal will rise next cycle
-will_rise = sv.get("valid", lambda s, sp1: s == 0 and sp1 == 1)
+# Rising edge detection (classic pattern)
+rising = sv.get("clk", lambda sm1, s: sm1 == 0 and s == 1)
 
-# Detect stable transitions
-stable_high = sv.get("data", lambda s, sp1: s == 1 and sp1 == 1)
+# Falling edge detection
+falling = sv.get("clk", lambda sm1, s: sm1 == 1 and s == 0)
 
-# Setup check: data stable before clock edge
-setup_ok = sv.get("data",
-                  lambda s, sp1: s == sp1,  # Data not changing
-                  value_type=Raw())
+# Change detection (any transition)
+changes = sv.get("data", lambda sm1, s: sm1 is not None and sm1 != s)
 ```
 
-**Boundary behavior**: Last timestep excluded when `none_ignore=True` (default), since `sp1=None` there.
+**Boundary behavior**: First timestep excluded when `none_ignore=True` (default), since `sm1=None` there.
 
 ### 3-Parameter: Previous, Current, and Next
 
@@ -224,8 +222,8 @@ changes = sv.get("data", lambda sm1, s, sp1: sm1 is not None and sm1 != s)
 | Signature | Use Case | Boundary Impact |
 |-----------|----------|-----------------|
 | 1-param   | Simple state checks (high/low, thresholds) | None |
-| 2-param   | Forward-looking patterns (will rise, setup checks) | Last timestep |
-| 3-param   | Temporal patterns (edges, glitches, changes) | First & last |
+| 2-param   | Edge detection and transitions | First timestep |
+| 3-param   | Complex temporal patterns (glitches, multi-cycle) | First & last |
 
 ## Value Types
 
