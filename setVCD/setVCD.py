@@ -335,29 +335,11 @@ class SetVCD:
         searched = [s for s in signals if re.search(search_regex, s)]
         return searched
 
-    def get(
-        self,
-        signal_name: str,
-        signal_condition: Callable[..., bool],
-        value_type: ValueType | None = None,
-    ) -> SignalExpression:
-        """Build a signal filter expression (no evaluation yet).
-
-        Args:
-            signal_name: Exact name of signal (case-sensitive). Must exist in VCD file.
-            signal_condition: Function that evaluates signal values. Supports three signatures:
-                - 1 parameter:  lambda s: bool
-                - 2 parameters: lambda sm1, s: bool
-                - 3 parameters: lambda sm1, s, sp1: bool
-            value_type: Value conversion type (default: Raw()).
-
-        Returns:
-            SignalExpression that can be combined with &, |, - and evaluated via
-            get_times() or get_values_with_t().
+    def validate_signal_name(self, signal_name: str) -> bool:
         """
-        if value_type is None:
-            value_type = Raw()
-
+        Side-effect function to throw exception if signal name is not found
+        in the wavefile.
+        """
         # Validate signal exists
         try:
             all_signals = self.wave.get_signals()
@@ -381,6 +363,33 @@ class SetVCD:
             else:
                 error_msg += f" Available signals: {all_signals[:10]}..."
             raise SignalNotFoundError(error_msg)
+
+        return True
+
+    def get(
+        self,
+        signal_name: str,
+        signal_condition: Callable[..., bool],
+        value_type: ValueType | None = None,
+    ) -> SignalExpression:
+        """Build a signal filter expression (no evaluation yet).
+
+        Args:
+            signal_name: Exact name of signal (case-sensitive). Must exist in VCD file.
+            signal_condition: Function that evaluates signal values. Supports three signatures:
+                - 1 parameter:  lambda s: bool
+                - 2 parameters: lambda sm1, s: bool
+                - 3 parameters: lambda sm1, s, sp1: bool
+            value_type: Value conversion type (default: Raw()).
+
+        Returns:
+            SignalExpression that can be combined with &, |, - and evaluated via
+            get_times() or get_values_with_t().
+        """
+        if value_type is None:
+            value_type = Raw()
+
+        self.validate_signal_name(signal_name)
 
         if not callable(signal_condition):
             raise InvalidSignalConditionError(
@@ -502,29 +511,7 @@ class SetVCD:
         if value_type is None:
             value_type = Raw()
 
-        # Validate output signal exists
-        try:
-            all_signals = self.wave.get_signals()
-        except Exception as e:
-            raise VCDParseError(f"Failed to retrieve signals: {e}") from e
-
-        if signal_name not in all_signals:
-            search_parts = [p for p in signal_name.lower().split(".") if p]
-            scored_signals = []
-            for sig in all_signals:
-                sig_lower = sig.lower()
-                matches = sum(1 for part in search_parts if part in sig_lower)
-                if matches > 0:
-                    scored_signals.append((matches, sig))
-            scored_signals.sort(reverse=True, key=lambda x: x[0])
-            similar = [sig for _, sig in scored_signals[:5]]
-
-            error_msg = f"Signal '{signal_name}' not found in VCD."
-            if similar:
-                error_msg += f" Did you mean one of: {similar}?"
-            else:
-                error_msg += f" Available signals: {all_signals[:10]}..."
-            raise SignalNotFoundError(error_msg)
+        self.validate_signal_name(signal_name)
 
         try:
             signal_obj = self.wave[signal_name]
