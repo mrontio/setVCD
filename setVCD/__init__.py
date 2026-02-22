@@ -16,6 +16,8 @@ from .types import (
     FP,
     Raw,
     SignalCondition,
+    SignalExpression,
+    SignalOperation,
     String,
     Time,
     TimeValue,
@@ -46,6 +48,8 @@ __all__ = [
     "Value",
     "TimeValue",
     "SignalCondition",
+    "SignalExpression",
+    "SignalOperation",
     "VCDInput",
     # ValueTypes
     "ValueType",

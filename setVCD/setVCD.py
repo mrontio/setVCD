@@ -2,9 +2,9 @@
 
 import inspect
 import re
+from collections.abc import Callable
 from inspect import Parameter
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 from weakref import WeakKeyDictionary
 
 import vcdvcd
@@ -21,9 +21,12 @@ from .exceptions import (
 from .types import (
     FP,
     AnyValue,
+    CompiledInput,
     FPValue,
     Raw,
     RawValue,
+    SignalCondition,
+    SignalExpression,
     SignalProtocol,
     String,
     StringValue,
@@ -33,11 +36,10 @@ from .types import (
     VCDVCDProtocol,
     XZIgnore,
     XZMethod,
-    XZValue,
 )
 
 
-def _convert_to_int(value: str) -> Optional[int]:
+def _convert_to_int(value: str) -> int | None:
     """Convert vcdvcd binary string to integer (Raw conversion).
 
     Args:
@@ -65,7 +67,7 @@ def _convert_to_int(value: str) -> Optional[int]:
         return None
 
 
-def _convert_to_string(value: str) -> Optional[str]:
+def _convert_to_string(value: str) -> str | None:
     """Convert vcdvcd string to string (String conversion - passthrough)."""
     # Return as-is, only return None for truly invalid input
     if value is None or value == "":
@@ -73,7 +75,7 @@ def _convert_to_string(value: str) -> Optional[str]:
     return value
 
 
-def _convert_to_fp(value: str, frac: int, signed: bool) -> Optional[float]:
+def _convert_to_fp(value: str, frac: int, signed: bool) -> float | None:
     """Convert vcdvcd binary string to fixed-point float (FP conversion)."""
     # Validate frac parameter
     if frac < 0:
@@ -119,7 +121,7 @@ def _convert_value(value_str: str, value_type: ValueType) -> AnyValue:
         raise ValueError(f"Unknown ValueType: {type(value_type)}")
 
 
-def _has_xz(value_str: Optional[str]) -> bool:
+def _has_xz(value_str: str | None) -> bool:
     """Check if raw vcdvcd string contains x or z."""
     if value_str is None:
         return False
@@ -208,7 +210,7 @@ class SetVCD:
         self,
         vcd: VCDInput,
         clock: str = "clk",
-        xz_method: Optional[XZMethod] = None,
+        xz_method: XZMethod | None = None,
         none_ignore: bool = True,
     ) -> None:
         """
@@ -229,7 +231,7 @@ class SetVCD:
                 Common None sources: boundaries (t=0, last_clock) and x/z values.
         """
         # Load VCD object
-        if isinstance(vcd, (str, Path)):
+        if isinstance(vcd, str | Path):
             vcd_path = Path(vcd)
             if not vcd_path.exists():
                 raise VCDFileNotFoundError(f"VCD file not found: {vcd_path}")
@@ -257,7 +259,7 @@ class SetVCD:
             raise EmptyVCDError("VCD file contains no signals")
 
         # Initialize signal storage
-        self.sigs: Dict[str, SignalProtocol] = {}
+        self.sigs: dict[str, SignalProtocol] = {}
 
         # Store x/z and None handling configuration
         if xz_method is None:
@@ -314,7 +316,7 @@ class SetVCD:
                 f"Failed to get last timestamp from clock signal: {e}"
             ) from e
 
-    def search(self, search_regex: str = "") -> List[str]:
+    def search(self, search_regex: str = "") -> list[str]:
         """Search for signals matching a regex pattern.
 
         Args:
@@ -337,51 +339,22 @@ class SetVCD:
         self,
         signal_name: str,
         signal_condition: Callable[..., bool],
-        value_type: Optional[ValueType] = None,
-    ) -> Set[Time]:
-        """Filter time points based on signal condition.
+        value_type: ValueType | None = None,
+    ) -> SignalExpression:
+        """Build a signal filter expression (no evaluation yet).
 
         Args:
             signal_name: Exact name of signal (case-sensitive). Must exist in VCD file.
             signal_condition: Function that evaluates signal values. Supports three signatures:
                 - 1 parameter:  lambda s: bool
-                  Receives only current value. Use for simple level checks.
                 - 2 parameters: lambda sm1, s: bool
-                  Receives previous and current value. Use for edge detection and transitions.
                 - 3 parameters: lambda sm1, s, sp1: bool
-                  Receives previous, current, and next values. Use for complex temporal patterns.
-                The value types passed depend on value_type parameter:
-                - Raw(): receives Optional[int] values
-                - String(): receives Optional[str] values
-                - FP(): receives Optional[float] values
             value_type: Value conversion type (default: Raw()).
-                - Raw(): Binary to int, x/z become None
-                - String(): Keep raw strings including x/z as literals
-                - FP(frac, signed): Fixed-point to float, x/z become NaN
 
         Returns:
-            Set of timesteps where signal_condition returns True.
-
-        Examples:
-            >>> # 1-parameter: Simple level detection
-            >>> high = vs.get("valid", lambda s: s == 1)
-            >>>
-            >>> # 2-parameter: Rising edge (backward-looking)
-            >>> rising = vs.get("clk", lambda sm1, s: sm1 == 0 and s == 1)
-            >>>
-            >>> # 3-parameter: Classic rising edge (backward-looking)
-            >>> rising = vs.get("clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
-            >>>
-            >>> # String matching to detect x/z
-            >>> has_x = vs.get("data", lambda s: s is not None and 'x' in s,
-            ...                value_type=String())
-            >>>
-            >>> # Fixed-point comparison
-            >>> above_threshold = vs.get("temp",
-            ...                          lambda s: s is not None and s > 25.5,
-            ...                          value_type=FP(frac=8, signed=True))
+            SignalExpression that can be combined with &, |, - and evaluated via
+            get_times() or get_values_with_t().
         """
-        # Default to Raw() if not specified
         if value_type is None:
             value_type = Raw()
 
@@ -392,20 +365,13 @@ class SetVCD:
             raise VCDParseError(f"Failed to retrieve signals: {e}") from e
 
         if signal_name not in all_signals:
-            # Provide helpful error with similar signals using fuzzy matching
-            # Split the search term into parts and find signals containing those parts
             search_parts = [p for p in signal_name.lower().split(".") if p]
-            similar = []
-
-            # Score each signal based on how many parts match
             scored_signals = []
             for sig in all_signals:
                 sig_lower = sig.lower()
                 matches = sum(1 for part in search_parts if part in sig_lower)
                 if matches > 0:
                     scored_signals.append((matches, sig))
-
-            # Sort by number of matches (descending) and take top matches
             scored_signals.sort(reverse=True, key=lambda x: x[0])
             similar = [sig for _, sig in scored_signals[:5]]
 
@@ -416,211 +382,140 @@ class SetVCD:
                 error_msg += f" Available signals: {all_signals[:10]}..."
             raise SignalNotFoundError(error_msg)
 
-        # Validate signal_condition is callable
         if not callable(signal_condition):
             raise InvalidSignalConditionError(
                 f"signal_condition must be callable, got {type(signal_condition).__name__}"
             )
 
-        # Get signal object
-        try:
-            signal_obj = self.wave[signal_name]
-        except Exception as e:
-            raise VCDParseError(f"Failed to access signal '{signal_name}': {e}") from e
-
-        # Inspect condition signature and cache result
         if signal_condition not in self._condition_signature_cache:
             self._condition_signature_cache[signal_condition] = (
                 _inspect_condition_signature(signal_condition)
             )
-        param_count = self._condition_signature_cache[signal_condition]
+        arity = self._condition_signature_cache[signal_condition]
 
-        # Iterate through ALL time steps (not just deltas)
-        out: Set[Time] = set()
+        return SignalExpression(
+            SignalCondition(
+                name=signal_name,
+                valueType=value_type,
+                xzMethod=self.xz_method,
+                noneIgnore=self.none_ignore,
+                arity=arity,
+                condition=signal_condition,
+            )
+        )
 
+    def get_times(self, expr: SignalExpression) -> set[Time]:
+        """Evaluate a SignalExpression and return the set of matching timesteps.
+
+        Args:
+            expr: A SignalExpression built from get() calls and &, |, - operators.
+
+        Returns:
+            Set of timesteps where the expression evaluates to True.
+        """
+        compiled_fn = expr.compile()
+        needed = expr.get_signals()
+        sig_objects: dict[str, SignalProtocol] = {
+            name: self.wave[name] for name in needed
+        }
+
+        result: set[Time] = set()
         for time in range(0, self.last_clock + 1):
             try:
-                # Get raw string values from vcdvcd
-                sm1_str: Optional[str] = signal_obj[time - 1] if time > 0 else None
-                s_str: str = signal_obj[time]
-                sp1_str: Optional[str] = (
-                    signal_obj[time + 1] if time < self.last_clock else None
-                )
+                c: CompiledInput = {}
+                for sig_name, sig_obj in sig_objects.items():
+                    sm1_str: str | None = sig_obj[time - 1] if time > 0 else None
+                    s_str: str = sig_obj[time]
+                    sp1_str: str | None = (
+                        sig_obj[time + 1] if time < self.last_clock else None
+                    )
+                    c[sig_name] = (sm1_str, s_str, sp1_str)
 
-                # XZ handling (BEFORE conversion) - parameter-count aware
-                if isinstance(self.xz_method, XZIgnore):
-                    # Only check values that will be used
-                    if _has_xz(s_str):  # Always check current
-                        continue
-                    if param_count >= 2 and _has_xz(sm1_str):  # Check sm1 if needed
-                        continue
-                    if param_count >= 3 and _has_xz(sp1_str):  # Check sp1 if needed
-                        continue
-                elif isinstance(self.xz_method, XZValue):
-                    # Only replace for Raw/FP, not for String
-                    if not isinstance(value_type, String):
-                        if sm1_str is not None:
-                            sm1_str = _replace_xz(sm1_str, self.xz_method.replacement)
-                        s_str = _replace_xz(s_str, self.xz_method.replacement)
-                        if sp1_str is not None:
-                            sp1_str = _replace_xz(sp1_str, self.xz_method.replacement)
-                # else XZNone: let conversion naturally handle x/z → None
-
-                # Convert values using specified ValueType (None for boundaries)
-                sm1: AnyValue = (
-                    _convert_value(sm1_str, value_type) if sm1_str is not None else None
-                )
-                s: AnyValue = _convert_value(s_str, value_type)
-                sp1: AnyValue = (
-                    _convert_value(sp1_str, value_type) if sp1_str is not None else None
-                )
-
-                # None handling (AFTER conversion) - parameter-count aware
-                if self.none_ignore:
-                    # Only check None for values that will be passed to condition
-                    if s is None:  # Current value always matters
-                        continue
-                    if param_count >= 2 and sm1 is None:
-                        continue
-                    if param_count >= 3 and sp1 is None:
-                        continue
-
-                # Evaluate user's condition with appropriate number of arguments
                 try:
-                    if param_count == 1:
-                        check = signal_condition(s)
-                    elif param_count == 2:
-                        check = signal_condition(sm1, s)
-                    else:  # param_count == 3
-                        check = signal_condition(sm1, s, sp1)
+                    if compiled_fn(c):
+                        result.add(time)
                 except Exception as e:
                     raise InvalidSignalConditionError(
                         f"signal_condition raised exception at time {time}: {e}. "
                         f"Note: signal values can be None (for x/z values or boundaries). "
-                        f"Function signature: {param_count} parameters"
+                        f"Function signature: {self._get_arity_from_expr(expr)} parameters"
                     ) from e
 
-                # Add time to result set if condition is True
-                if check:
-                    out.add(time)
-
             except InvalidSignalConditionError:
-                # Re-raise our own exceptions
                 raise
             except Exception as e:
-                # Wrap any other errors
                 raise VCDParseError(
-                    f"Failed to access signal '{signal_name}' at time {time}: {e}"
+                    f"Failed to evaluate expression at time {time}: {e}"
                 ) from e
 
-        return out
+        return result
+
+    def _get_arity_from_expr(self, expr: SignalExpression) -> str:
+        """Extract arity info from the outermost SignalCondition for error messages."""
+        match expr.expr:
+            case SignalCondition() as c:
+                return str(c.arity)
+            case _:
+                return "unknown"
 
     def get_values(
         self,
         signal_name: str,
-        timesteps: Set[Time],
-        value_type: Optional[ValueType] = None,
-    ) -> Union[
-        List[Tuple[Time, RawValue]],
-        List[Tuple[Time, StringValue]],
-        List[Tuple[Time, FPValue]],
-    ]:
-        """Get values of a signal for specific timesteps.
-
-        This method takes a set of timesteps (typically from `get`) and returns
-        the signal values at those times as a sorted list values.
+        expr: SignalExpression,
+        value_type: ValueType | None = None,
+    ) -> list[RawValue] | list[StringValue] | list[FPValue]:
+        """Evaluate expr and return values of signal_name at matching timesteps.
 
         Args:
-            signal_name: Exact name of the signal to query (case-sensitive).
-                Must exist in the VCD file.
-            timesteps: Set of integer timesteps to query. Can be empty.
+            signal_name: Signal whose values to retrieve at matching times.
+            expr: Expression that determines which timesteps to include.
             value_type: Value conversion type (default: Raw()).
-                - Raw(): Binary to int, x/z become None → List[Tuple[Time, Optional[int]]]
-                - String(): Keep raw strings including x/z → List[Tuple[Time, Optional[str]]]
-                - FP(frac, signed): Fixed-point to float, x/z → NaN → List[Tuple[Time, Optional[float]]]
 
         Returns:
-            Sorted list values. Value type depends on value_type parameter.
-
-        Examples:
-            >>> handshakes = valid_times & ready_times
-            >>>
-            >>> # Get as integers (default)
-            >>> int_values = vs.get_values("counter", handshakes)
-            >>>
-            >>> # Get as strings to see x/z
-            >>> str_values = vs.get_values("data_bus", handshakes, String())
-            >>>
-            >>> # Get as fixed-point floats
-            >>> fp_values = vs.get_values("voltage", handshakes, FP(frac=12, signed=False))
+            Sorted list of values (no timestamps).
         """
-        vals_with_t = self.get_values_with_t(signal_name, timesteps, value_type)
-        # Tell pyright to ignore this because we have dependent types.
+        vals_with_t = self.get_values_with_t(signal_name, expr, value_type)
         return [pair[1] for pair in vals_with_t]  # type: ignore[return-value]
 
     def get_values_with_t(
         self,
         signal_name: str,
-        timesteps: Set[Time],
-        value_type: Optional[ValueType] = None,
-    ) -> Union[
-        List[Tuple[Time, RawValue]],
-        List[Tuple[Time, StringValue]],
-        List[Tuple[Time, FPValue]],
-    ]:
-        """Get (timesteps, values) of a signal for specific timesteps.
+        expr: SignalExpression,
+        value_type: ValueType | None = None,
+    ) -> (
+        list[tuple[Time, RawValue]]
+        | list[tuple[Time, StringValue]]
+        | list[tuple[Time, FPValue]]
+    ):
+        """Evaluate expr and return (time, value) pairs for signal_name at matching timesteps.
 
-        This method takes a set of timesteps (typically from get()) and returns
-        the signal values at those times as a sorted list of (time, value) tuples.
+        Compiles the expression once and iterates the VCD in a single pass.
 
         Args:
-            signal_name: Exact name of the signal to query (case-sensitive).
-                Must exist in the VCD file.
-            timesteps: Set of integer timesteps to query. Can be empty.
-            value_type: Value conversion type (default: Raw())).
-                - Raw(): Binary to int, x/z become None → List[Tuple[Time, Optional[int]]]
-                - String(): Keep raw strings including x/z → List[Tuple[Time, Optional[str]]]
-                - FP(frac, signed): Fixed-point to float, x/z → NaN → List[Tuple[Time, Optional[float]]]
+            signal_name: Signal whose values to retrieve at matching times.
+            expr: Expression (from get() and &/|/- operators) that filters timesteps.
+            value_type: Value conversion type for the output signal (default: Raw()).
 
         Returns:
-            Sorted list of (time, value) tuples. Value type depends on value_type parameter.
-
-        Examples:
-            >>> handshakes = valid_times & ready_times
-            >>>
-            >>> # Get as integers (default)
-            >>> int_values = vs.get_values_with_t("counter", handshakes)
-            >>>
-            >>> # Get as strings to see x/z
-            >>> str_values = vs.get_values_with_t("data_bus", handshakes, String())
-            >>>
-            >>> # Get as fixed-point floats
-            >>> fp_values = vs.get_values_with_t("voltage", handshakes, FP(frac=12, signed=False))
+            Sorted list of (time, value) tuples.
         """
-        # Default to Raw() if not specified
         if value_type is None:
             value_type = Raw()
 
-        # Validate signal exists
+        # Validate output signal exists
         try:
             all_signals = self.wave.get_signals()
         except Exception as e:
             raise VCDParseError(f"Failed to retrieve signals: {e}") from e
 
         if signal_name not in all_signals:
-            # Provide helpful error with similar signals using fuzzy matching
             search_parts = [p for p in signal_name.lower().split(".") if p]
-            similar = []
-
-            # Score each signal based on how many parts match
             scored_signals = []
             for sig in all_signals:
                 sig_lower = sig.lower()
                 matches = sum(1 for part in search_parts if part in sig_lower)
                 if matches > 0:
                     scored_signals.append((matches, sig))
-
-            # Sort by number of matches (descending) and take top matches
             scored_signals.sort(reverse=True, key=lambda x: x[0])
             similar = [sig for _, sig in scored_signals[:5]]
 
@@ -631,26 +526,46 @@ class SetVCD:
                 error_msg += f" Available signals: {all_signals[:10]}..."
             raise SignalNotFoundError(error_msg)
 
-        # Get signal object
         try:
             signal_obj = self.wave[signal_name]
         except Exception as e:
             raise VCDParseError(f"Failed to access signal '{signal_name}': {e}") from e
 
-        # Get values at each timestep and sort by time
-        result: List[Tuple[Time, AnyValue]] = []
-        for time in timesteps:
+        compiled_fn = expr.compile()
+        needed = expr.get_signals()
+        sig_objects: dict[str, SignalProtocol] = {
+            name: self.wave[name] for name in needed
+        }
+
+        result: list[tuple[Time, AnyValue]] = []
+        for time in range(0, self.last_clock + 1):
             try:
-                value_str: str = signal_obj[time]
-                value_converted: AnyValue = _convert_value(value_str, value_type)
-                result.append((time, value_converted))
+                c: CompiledInput = {}
+                for sig_name, sig_obj in sig_objects.items():
+                    sm1_str: str | None = sig_obj[time - 1] if time > 0 else None
+                    s_str: str = sig_obj[time]
+                    sp1_str: str | None = (
+                        sig_obj[time + 1] if time < self.last_clock else None
+                    )
+                    c[sig_name] = (sm1_str, s_str, sp1_str)
+
+                try:
+                    if compiled_fn(c):
+                        value_str: str = signal_obj[time]
+                        result.append((time, _convert_value(value_str, value_type)))
+                except Exception as e:
+                    raise InvalidSignalConditionError(
+                        f"signal_condition raised exception at time {time}: {e}. "
+                        f"Note: signal values can be None (for x/z values or boundaries). "
+                        f"Function signature: {self._get_arity_from_expr(expr)} parameters"
+                    ) from e
+
+            except InvalidSignalConditionError:
+                raise
             except Exception as e:
                 raise VCDParseError(
                     f"Failed to access signal '{signal_name}' at time {time}: {e}"
                 ) from e
 
-        # Sort by time
         result.sort(key=lambda x: x[0])
-
-        # Tell pyright to ignore this because we have dependent types.
         return result  # type: ignore[return-value]
