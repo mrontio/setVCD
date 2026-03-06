@@ -736,7 +736,7 @@ class TestValueTypeFP:
         """Test FP() basic conversion with unsigned values."""
         rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
         values = vcdset.get_values_with_t(
-            "TOP.clk", rising, value_type=FP(frac=4, signed=False)
+            "TOP.clk", rising, value_type=FP(total_bits=1, frac=4, signed=False)
         )
         for _, value in values:
             assert isinstance(value, float)
@@ -747,7 +747,7 @@ class TestValueTypeFP:
         """Test FP() with frac=0 (whole numbers)."""
         rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
         values = vcdset.get_values_with_t(
-            "TOP.clk", rising, value_type=FP(frac=0, signed=False)
+            "TOP.clk", rising, value_type=FP(total_bits=1, frac=0, signed=False)
         )
         for _, value in values:
             assert isinstance(value, float)
@@ -758,7 +758,7 @@ class TestValueTypeFP:
         high = vcdset.get(
             "TOP.clk",
             lambda sm1, s, sp1: s is not None and s > 0.5,
-            value_type=FP(frac=0, signed=False),
+            value_type=FP(total_bits=1, frac=0, signed=False),
         )
         assert isinstance(high, SignalExpression)
         assert len(vcdset.get_times(high)) > 0
@@ -766,13 +766,18 @@ class TestValueTypeFP:
     def test_fp_negative_frac_raises_error(self, vcdset):
         """Test that FP() with negative frac raises error at construction."""
         with pytest.raises(ValueError, match="frac must be >= 0"):
-            FP(frac=-1, signed=False)
+            FP(total_bits=1, frac=-1, signed=False)
+
+    def test_fp_invalid_total_bits_raises_error(self, vcdset):
+        """Test that FP() with total_bits < 1 raises error at construction."""
+        with pytest.raises(ValueError, match="total_bits must be >= 1"):
+            FP(total_bits=0, frac=0, signed=False)
 
     def test_fp_large_frac(self, vcdset):
         """Test FP() with frac larger than bit width."""
         rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
         values = vcdset.get_values_with_t(
-            "TOP.clk", rising, value_type=FP(frac=8, signed=False)
+            "TOP.clk", rising, value_type=FP(total_bits=1, frac=8, signed=False)
         )
         for _, value in values:
             assert isinstance(value, float)
@@ -782,7 +787,7 @@ class TestValueTypeFP:
         """Test arithmetic operations with FP values."""
         rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
         values = vcdset.get_values_with_t(
-            "TOP.clk", rising, value_type=FP(frac=4, signed=False)
+            "TOP.clk", rising, value_type=FP(total_bits=1, frac=4, signed=False)
         )
         for _, value in values:
             doubled = value * 2
@@ -820,7 +825,9 @@ class TestValueTypeEdgeCases:
 
         time_zero_found = False
         expr = vcdset.get(
-            "TOP.clk", check_time_zero, value_type=FP(frac=4, signed=False)
+            "TOP.clk",
+            check_time_zero,
+            value_type=FP(total_bits=1, frac=4, signed=False),
         )
         vcdset.get_times(expr)
         assert time_zero_found
@@ -863,13 +870,13 @@ class TestValueTypeEdgeCases:
         rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
 
         fp0 = vcdset.get_values_with_t(
-            "TOP.clk", rising, value_type=FP(frac=0, signed=False)
+            "TOP.clk", rising, value_type=FP(total_bits=1, frac=0, signed=False)
         )
         fp4 = vcdset.get_values_with_t(
-            "TOP.clk", rising, value_type=FP(frac=4, signed=False)
+            "TOP.clk", rising, value_type=FP(total_bits=1, frac=4, signed=False)
         )
         fp8 = vcdset.get_values_with_t(
-            "TOP.clk", rising, value_type=FP(frac=8, signed=False)
+            "TOP.clk", rising, value_type=FP(total_bits=1, frac=8, signed=False)
         )
 
         for (_t0, v0), (_t4, v4), (_t8, v8) in zip(fp0, fp4, fp8, strict=True):
@@ -886,7 +893,7 @@ class TestValueTypeEdgeCases:
         raw_values = vcdset.get_values_with_t("TOP.clk", never, value_type=Raw())
         string_values = vcdset.get_values_with_t("TOP.clk", never, value_type=String())
         fp_values = vcdset.get_values_with_t(
-            "TOP.clk", never, value_type=FP(frac=4, signed=False)
+            "TOP.clk", never, value_type=FP(total_bits=1, frac=4, signed=False)
         )
 
         assert raw_values == []
@@ -898,10 +905,10 @@ class TestValueTypeEdgeCases:
         rising = vcdset.get("TOP.clk", lambda sm1, s, sp1: sm1 == 0 and s == 1)
 
         unsigned = vcdset.get_values_with_t(
-            "TOP.clk", rising, value_type=FP(frac=0, signed=False)
+            "TOP.clk", rising, value_type=FP(total_bits=1, frac=0, signed=False)
         )
         signed = vcdset.get_values_with_t(
-            "TOP.clk", rising, value_type=FP(frac=0, signed=True)
+            "TOP.clk", rising, value_type=FP(total_bits=1, frac=0, signed=True)
         )
 
         for (_t_u, v_u), (_t_s, v_s) in zip(unsigned, signed, strict=True):
@@ -1016,7 +1023,7 @@ class TestXZMethodValue:
         result = vs.get(
             "TOP.clk",
             lambda sm1, s, sp1: s is not None and abs(s - 0.0625) < 0.001,
-            value_type=FP(frac=4, signed=False),
+            value_type=FP(total_bits=1, frac=4, signed=False),
         )
         assert isinstance(vs.get_times(result), set)
 
@@ -1233,7 +1240,7 @@ class TestSetVCDFlexibleSignatures:
                 and not math.isnan(s)
                 and s > sm1
             ),
-            value_type=FP(frac=0, signed=False),
+            value_type=FP(total_bits=16, frac=0, signed=False),
         )
         assert isinstance(result, SignalExpression)
 

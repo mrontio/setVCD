@@ -84,12 +84,15 @@ class FP:
             Default is False (unsigned).
     """
 
+    total_bits: int
     frac: int
     signed: bool = False
 
     def __post_init__(self) -> None:
         if self.frac < 0:
             raise ValueError(f"frac must be >= 0, got {self.frac}")
+        if self.total_bits < 1:
+            raise ValueError(f"total_bits must be >= 1, got {self.total_bits}")
 
 
 ValueType = Raw | String | FP
@@ -156,7 +159,9 @@ class Conversions:
             return None
 
     @staticmethod
-    def float(value: str, frac: int, signed: bool, xz: XZMethod) -> FPValue:
+    def float(
+        value: str, total_bits: int, frac: int, signed: bool, xz: XZMethod
+    ) -> FPValue:
         value_lower = value.lower()
         if "x" in value_lower or "z" in value_lower:
             match xz:
@@ -169,7 +174,6 @@ class Conversions:
 
         try:
             int_value = int(value, 2)
-            total_bits = len(value)
 
             if signed and total_bits > 0:
                 sign_bit = 1 << (total_bits - 1)
@@ -246,9 +250,13 @@ class SignalCondition:
                 conversion = partial(Conversions.to_int, xz=self.xzMethod)
             case String():
                 conversion = partial(Conversions.string, xz=self.xzMethod)
-            case FP(frac, signed):
+            case FP(total_bits, frac, signed):
                 conversion = partial(
-                    Conversions.float, frac=frac, signed=signed, xz=self.xzMethod
+                    Conversions.float,
+                    total_bits=total_bits,
+                    frac=frac,
+                    signed=signed,
+                    xz=self.xzMethod,
                 )
             case _:
                 raise ValueError(f"Unknown ValueType: {self.valueType}")

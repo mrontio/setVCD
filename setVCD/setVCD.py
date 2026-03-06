@@ -75,7 +75,9 @@ def _convert_to_string(value: str) -> str | None:
     return value
 
 
-def _convert_to_fp(value: str, frac: int, signed: bool) -> float | None:
+def _convert_to_fp(
+    value: str, total_bits: int, frac: int, signed: bool
+) -> float | None:
     """Convert vcdvcd binary string to fixed-point float (FP conversion)."""
     # Validate frac parameter
     if frac < 0:
@@ -89,7 +91,6 @@ def _convert_to_fp(value: str, frac: int, signed: bool) -> float | None:
     try:
         # Convert binary string to integer (unsigned initially)
         int_value = int(value, 2)
-        total_bits = len(value)
 
         # Handle signed values (two's complement)
         if signed and total_bits > 0:
@@ -115,7 +116,9 @@ def _convert_value(value_str: str, value_type: ValueType) -> AnyValue:
     elif isinstance(value_type, String):
         return _convert_to_string(value_str)
     elif isinstance(value_type, FP):
-        return _convert_to_fp(value_str, value_type.frac, value_type.signed)
+        return _convert_to_fp(
+            value_str, value_type.total_bits, value_type.frac, value_type.signed
+        )
     else:
         # Should never happen with proper typing
         raise ValueError(f"Unknown ValueType: {type(value_type)}")
